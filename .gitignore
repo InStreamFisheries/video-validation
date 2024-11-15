@@ -1,3 +1,12 @@
+# Ignore PyInstaller build outputs
+/dist/
+/build/
+/releases/
+
+# Ignore spec files
+/specs/
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

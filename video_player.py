@@ -62,7 +62,7 @@ def step_forward():
         player.pause()
 
 # step backward one frame (pause first and ensure players stay paused)
-# soes not work at the moment
+# does not work at the moment
 def step_backward():
     for player in players:
         player.pause()
