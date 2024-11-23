@@ -5,6 +5,29 @@ from tkinter import ttk, Label
 
 players = []
 frames = []  # to store frames for each player
+updating_seek_bar = False
+
+def update_seek_bar():
+    global updating_seek_bar
+    if players and seek_bar:
+        current_time_ms = players[0].get_time()
+        duration_ms = players[0].get_length()
+
+        if duration_ms > 0:
+            updating_seek_bar = True  # block input during sys update
+            seek_bar.set((current_time_ms / duration_ms) * 100) 
+            updating_seek_bar = False
+
+    root.after(250, update_seek_bar)  
+
+def on_seek(value):
+    global updating_seek_bar
+    if not updating_seek_bar and players:
+        duration_ms = players[0].get_length()
+        if duration_ms > 0:
+            seek_time_ms = int((float(value) / 100) * duration_ms)
+            for player in players:
+                player.set_time(seek_time_ms)
 
 # initialize VLC instances for the given camera video files
 def initialize_players(files, screen_width, screen_height):
@@ -19,12 +42,6 @@ def initialize_players(files, screen_width, screen_height):
 
         frame = frames[idx]  # attach player to specific tkinter frame
         player.set_hwnd(frame.winfo_id())
-
-        # create an overlay label for each video frame
-        # this is not working right now
-        file_label = Label(frame, text=os.path.basename(file), bg="black", fg="white", font=("Arial", 10, "bold"))
-        file_label.place(relx=0.5, rely=0, anchor="n") 
-        file_label.tkraise()
 
         player.play()
         players.append(player)
@@ -47,41 +64,18 @@ def stop():
     if root:
         root.destroy()
 
-
 def change_speed(rate):
     for player in players:
         player.set_rate(rate)
-
-# step forward one frame (pause first and ensure players stay paused)
-# does not work at the moment
-def step_forward():
-    for player in players:
-        player.pause()
-    for player in players:
-        player.set_time(player.get_time() + int(1000 / 30))
-        player.pause()
-
-# step backward one frame (pause first and ensure players stay paused)
-# does not work at the moment
-def step_backward():
-    for player in players:
-        player.pause()
-    for player in players:
-        player.set_time(max(player.get_time() - int(1000 / 30), 0))
-        player.pause()
-
 def rewind_1_4_sec():
     for player in players:
         player.set_time(max(player.get_time() - 250, 0))  # 1/4 second
-
 def progress_1_4_sec():
     for player in players:
         player.set_time(max(player.get_time() + 250, 0))  # 1/4 second
-
 def rewind_30s():
     for player in players:
         player.set_time(max(player.get_time() - 30000, 0))  # 30 seconds
-
 def progress_30s():
     for player in players:
         player.set_time(player.get_time() + 30000)  # 30 seconds
@@ -116,10 +110,16 @@ def on_closing():
 
 # gui setup
 def create_gui(files):
-    global root, frames, now_playing_label, timer_entry
+    global root, frames, now_playing_label, timer_entry, seek_bar
     root = tk.Tk()
     root.protocol("WM_DELETE_WINDOW", stop)
-    root.title("Video Playback Controls")
+    root.title("Video Playback")
+
+    icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
+    try:
+        root.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"Failed to load icon: {e}. Using default icon.")
 
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
@@ -150,15 +150,6 @@ def create_gui(files):
         speed_button = ttk.Button(control_frame, text=f"{rate}x", command=lambda r=rate: change_speed(r))
         speed_button.grid(row=1, column=i + 1, padx=5, pady=5)
 
-    # frame controls
-    # temp to remove buttons since feature does not work
-    # rewind_button = ttk.Button(control_frame, text="Rewind (1 frame)", command=step_backward)
-    # rewind_button.grid(row=2, column=0, padx=5, pady=5)
-
-    # progress_button = ttk.Button(control_frame, text="Progress (1 frame)", command=step_forward)
-    # progress_button.grid(row=2, column=1, padx=5, pady=5)
-
-    # additional rewind/progress controls
     rewind_1_4_button = ttk.Button(control_frame, text="Rewind (1/4s)", command=rewind_1_4_sec)
     rewind_1_4_button.grid(row=3, column=0, padx=5, pady=5)
 
@@ -184,11 +175,20 @@ def create_gui(files):
     display_name = filename[5:] if filename.startswith("CAM") else filename
         # display "Now Playing" label with the formatted filename
     now_playing_label = ttk.Label(control_frame, text=f"Now playing: {display_name}")
-    now_playing_label.grid(row=5, column=0, padx=5, pady=5, columnspan=3)
+    now_playing_label.grid(row=6, column=0, padx=5, pady=5, columnspan=3)
 
     update_timer()
 
+    seek_bar = ttk.Scale(
+        control_frame,
+        from_=0,
+        to=100,
+        orient="horizontal",
+        command=on_seek
+    )
+    seek_bar.grid(row=5, column=0, padx=5, pady=5, columnspan=3, sticky="ew")
     root.protocol("WM_DELETE_WINDOW", on_closing)
+    update_seek_bar()
     root.mainloop()
 
 def play_videos(vlc_path, files):

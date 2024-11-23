@@ -92,6 +92,12 @@ def show_navigation_ui():
     root = Tk()
     root.title("Video Navigation")
     root.geometry("600x400")  # testing size
+    icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
+    try:
+        root.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"Failed to load icon: {e}. Using default icon.")
+
 
     # selection variables for dropdowns
     year_var = StringVar(root)
