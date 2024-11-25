@@ -6,6 +6,7 @@ from tkinter import ttk, Label
 players = []
 frames = []  # to store frames for each player
 updating_seek_bar = False
+icon_path=None
 
 def update_seek_bar():
     global updating_seek_bar
@@ -58,7 +59,6 @@ def toggle_play_pause():
             player.play()
 
 def stop():
-    """Stop all videos and close the Tkinter root window."""
     for player in players:
         player.stop()
     if root:
@@ -115,11 +115,14 @@ def create_gui(files):
     root.protocol("WM_DELETE_WINDOW", stop)
     root.title("Video Playback")
 
-    icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
-    try:
-        root.iconbitmap(icon_path)
-    except Exception as e:
-        print(f"Failed to load icon: {e}. Using default icon.")
+    #icon path setup
+    if icon_path:
+        try:
+            root.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"Failed to load icon in video player: {e}. Using default icon.")
+    else:
+        print("Icon path not set in video player.")
 
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()

@@ -4,9 +4,9 @@ from collections import defaultdict
 from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu
 from video_player import play_videos
 
-# match the file naming pattern
 file_pattern = re.compile(r"^(CAM\d+)_(\d{8}_\d{4})\.mp4$")
 camera_files = defaultdict(lambda: defaultdict(lambda: defaultdict(dict))) 
+icon_path = None
 
 config = {
     "vlc_path": None,
@@ -14,7 +14,6 @@ config = {
 }
 
 def setup_vlc_path():
-    """Retrieve or set up the VLC path."""
     if config["vlc_path"]:
         return config["vlc_path"]
 
@@ -23,7 +22,6 @@ def setup_vlc_path():
         config["vlc_path"] = default_vlc_path
         return default_vlc_path
 
-    # prompt user for VLC path
     root = Tk()
     root.withdraw()
     vlc_path = filedialog.askopenfilename(
@@ -37,7 +35,6 @@ def setup_vlc_path():
         print("VLC path not selected. Exiting.")
         exit()
 
-# load files and categorize by timestamp
 def load_camera_files():
     global camera_files
     rec_path = filedialog.askdirectory(title="Select the REC Folder")
@@ -66,8 +63,6 @@ def load_camera_files():
 def get_saved_rec_path():
     return config.get("rec_path")
 
-# display a summary of available footage
-# only works in terminal
 def display_summary():
     unique_cameras = set()
     total_timestamps = 0
@@ -91,89 +86,84 @@ def display_summary():
 def show_navigation_ui():
     root = Tk()
     root.title("Video Navigation")
-    root.geometry("600x400")  # testing size
-    icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
-    try:
-        root.iconbitmap(icon_path)
-    except Exception as e:
-        print(f"Failed to load icon: {e}. Using default icon.")
-
-
-    # selection variables for dropdowns
-    year_var = StringVar(root)
-    month_var = StringVar(root)
-    day_var = StringVar(root)
-    time_var = StringVar(root)
-
-    # load saved REC path if available
-    saved_rec_path = get_saved_rec_path()
-    if saved_rec_path:
-        rec_path_label_text = f"Selected Drive: {saved_rec_path}"
+    root.geometry("600x400")  
+    if icon_path:
+        try:
+            root.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"Failed to load icon in navigation: {e}. Using default icon.")
     else:
-        rec_path_label_text = "No Drive Selected"
+        print("Icon path not set in navigation.")
 
-    # drive path label to display selected or saved drive path
+    year_var = StringVar(root, value="Select Year")
+    month_var = StringVar(root, value="Select Month")
+    day_var = StringVar(root, value="Select Day")
+    time_var = StringVar(root, value="Select Time")
+
+    saved_rec_path = get_saved_rec_path()
+    rec_path_label_text = f"Selected Drive: {saved_rec_path}" if saved_rec_path else "No Drive Selected"
     drive_path_label = Label(root, text=rec_path_label_text, wraplength=400, anchor="w")
     drive_path_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
 
     def select_drive():
-        """Select drive and load camera files."""
         if load_camera_files():
             drive_path_label.config(text=f"Selected Drive: {config['rec_path']}")
             display_summary()
             update_years()
 
     def update_years():
-        """Populate the year dropdown based on loaded files."""
-        year_options = sorted(camera_files.keys())
-        year_var.set("Select Year")
         year_menu['menu'].delete(0, 'end')
-        for year in year_options:
+        years = sorted(camera_files.keys())
+        for year in years:
             year_menu['menu'].add_command(label=year, command=lambda value=year: year_var.set(value))
         update_months()
 
     def update_months(*args):
-        """Update the months based on the selected year."""
-        selected_year = year_var.get()
-        month_var.set("Select Month")
         month_menu['menu'].delete(0, 'end')
+        selected_year = year_var.get()
         if selected_year in camera_files:
-            for month in sorted(camera_files[selected_year].keys()):
+            months = sorted(camera_files[selected_year].keys())
+            for month in months:
                 month_menu['menu'].add_command(label=month, command=lambda value=month: month_var.set(value))
         update_days()
 
     def update_days(*args):
-        """Update the days based on the selected month."""
+        day_menu['menu'].delete(0, 'end')
         selected_year = year_var.get()
         selected_month = month_var.get()
-        day_var.set("Select Day")
-        day_menu['menu'].delete(0, 'end')
-        if selected_month in camera_files[selected_year]:
-            for day in sorted(camera_files[selected_year][selected_month].keys()):
+        if selected_year in camera_files and selected_month in camera_files[selected_year]:
+            days = sorted(camera_files[selected_year][selected_month].keys())
+            for day in days:
                 day_menu['menu'].add_command(label=day, command=lambda value=day: day_var.set(value))
         update_times()
 
     def update_times(*args):
-        """Update the times based on the selected day."""
+        time_menu['menu'].delete(0, 'end')
         selected_year = year_var.get()
         selected_month = month_var.get()
         selected_day = day_var.get()
-        time_var.set("Select Time")
-        time_menu['menu'].delete(0, 'end')
-    
-        if selected_day in camera_files[selected_year][selected_month]:
-            for time in sorted(camera_files[selected_year][selected_month][selected_day].keys()):
-                formatted_time = f"{time[1:3]}:{time[3:]}" if time.startswith("_") else f"{time[:2]}:{time[2:]}"
+
+        if selected_year in camera_files and selected_month in camera_files[selected_year] and selected_day in camera_files[selected_year][selected_month]:
+            times = sorted(camera_files[selected_year][selected_month][selected_day].keys())
+            for raw_time in times:
+                # Remove leading `_` and format as HH:MM
+                formatted_time = f"{raw_time[1:3]}:{raw_time[3:]}"
                 time_menu['menu'].add_command(
-                    label=formatted_time, 
-                    command=lambda value=time: time_var.set(value)
+                    label=formatted_time,
+                    command=lambda ft=formatted_time, rt=raw_time: set_time(ft, rt)
                 )
+                
+    # i dont really like this? i think there is a better way to pass the var without making a new function
+    def set_time(formatted_time, raw_time):
+        time_var.set(formatted_time)  # formatted time, for dd
+        time_var.raw_time = raw_time  # raw time
+
+
 
     year_var.trace("w", update_months)
     month_var.trace("w", update_days)
     day_var.trace("w", update_times)
 
-    # dropdown menus and Labels
     Label(root, text="Year:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
     year_menu = OptionMenu(root, year_var, "Select Year")
     year_menu.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
@@ -198,11 +188,9 @@ def show_navigation_ui():
         selected_year = year_var.get()
         selected_month = month_var.get()
         selected_day = day_var.get()
-        selected_time = time_var.get().replace(":", "")
-    
+        selected_time = getattr(time_var, "raw_time", None)
         if selected_year and selected_month and selected_day and selected_time:
             try:
-                print(f"\nPlaying videos for timestamp: {selected_year}-{selected_month}-{selected_day}_{selected_time}")
                 play_videos(vlc_path, camera_files[selected_year][selected_month][selected_day][selected_time])
             except KeyError:
                 print("Error: Selected time not found.")
