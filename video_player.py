@@ -6,7 +6,7 @@ from tkinter import ttk, Label
 players = []
 frames = []  # to store frames for each player
 updating_seek_bar = False
-icon_path=None
+icon_path = None
 
 def update_seek_bar():
     global updating_seek_bar
@@ -19,7 +19,7 @@ def update_seek_bar():
             seek_bar.set((current_time_ms / duration_ms) * 100) 
             updating_seek_bar = False
 
-    root.after(250, update_seek_bar)  
+    root.after(250, update_seek_bar)
 
 def on_seek(value):
     global updating_seek_bar
@@ -69,27 +69,16 @@ def change_speed(rate):
         player.set_rate(rate)
 def rewind_1_4_sec():
     for player in players:
-        player.set_time(max(player.get_time() - 250, 0))  # 1/4 second
+        player.set_time(max(player.get_time() - 250, 0))
 def progress_1_4_sec():
     for player in players:
-        player.set_time(max(player.get_time() + 250, 0))  # 1/4 second
+        player.set_time(max(player.get_time() + 250, 0))
 def rewind_30s():
     for player in players:
-        player.set_time(max(player.get_time() - 30000, 0))  # 30 seconds
+        player.set_time(max(player.get_time() - 30000, 0))
 def progress_30s():
     for player in players:
-        player.set_time(player.get_time() + 30000)  # 30 seconds
-
-# seek to a specific time across all videos
-def seek_to_time():
-    time_str = timer_entry.get()
-    try:
-        minutes, seconds = map(int, time_str.split(":"))
-        target_time_ms = (minutes * 60 + seconds) * 1000
-        for player in players:
-            player.set_time(target_time_ms)
-    except ValueError:
-        print("Invalid time format. Use mm:ss.")
+        player.set_time(player.get_time() + 30000)
 
 # update timer display for all players
 def update_timer():
@@ -97,10 +86,13 @@ def update_timer():
         current_time_ms = sum(player.get_time() for player in players) // len(players)
         current_time_sec = current_time_ms // 1000
         minutes, seconds = divmod(current_time_sec, 60)
-        
-        timer_entry.delete(0, tk.END)
-        timer_entry.insert(0, f"{minutes:02}:{seconds:02}")
-        
+        duration_ms = players[0].get_length()
+        duration_sec = duration_ms // 1000
+        duration_minutes, duration_seconds = divmod(duration_sec, 60)
+
+        # update the label with formatted time
+        timer_label.config(text=f"{minutes:02}:{seconds:02} / {duration_minutes:02}:{duration_seconds:02}")
+
     root.after(1000, update_timer)
 
 def on_closing():
@@ -108,14 +100,13 @@ def on_closing():
         player.stop()
     root.destroy()
 
-# gui setup
+# GUI setup
 def create_gui(files):
-    global root, frames, now_playing_label, timer_entry, seek_bar
+    global root, frames, now_playing_label, timer_label, seek_bar
     root = tk.Tk()
     root.protocol("WM_DELETE_WINDOW", stop)
     root.title("Video Playback")
-
-    #icon path setup
+    # icon path setup
     if icon_path:
         try:
             root.iconbitmap(icon_path)
@@ -134,18 +125,16 @@ def create_gui(files):
         frame.grid(row=row, column=col, sticky="nsew")
         frame.grid_propagate(False)
 
-    # frame in bottom-right
-    control_frame = tk.Frame(root, width=screen_width//2, height=screen_height//2)
+    # ctrl frame
+    control_frame = tk.Frame(root, width=screen_width // 2, height=screen_height // 2)
     control_frame.grid(row=1, column=1, sticky="nsew")
     control_frame.grid_propagate(False)
-
     initialize_players(files, screen_width, screen_height)
 
     play_pause_button = ttk.Button(control_frame, text="Play/Pause", command=toggle_play_pause)
-    play_pause_button.grid(row=0, column=0, padx=5, pady=5)
-
+    play_pause_button.grid(row=0, column=1, padx=5, pady=5)
     stop_button = ttk.Button(control_frame, text="Stop", command=stop)
-    stop_button.grid(row=0, column=1, padx=5, pady=5)
+    stop_button.grid(row=0, column=2, padx=5, pady=5)
 
     speed_label = ttk.Label(control_frame, text="Speed:")
     speed_label.grid(row=1, column=0, padx=5, pady=5)
@@ -155,32 +144,22 @@ def create_gui(files):
 
     rewind_1_4_button = ttk.Button(control_frame, text="Rewind (1/4s)", command=rewind_1_4_sec)
     rewind_1_4_button.grid(row=3, column=0, padx=5, pady=5)
-
     progress_1_4_button = ttk.Button(control_frame, text="Progress (1/4s)", command=progress_1_4_sec)
     progress_1_4_button.grid(row=3, column=1, padx=5, pady=5)
 
     rewind_30_button = ttk.Button(control_frame, text="Rewind (30s)", command=rewind_30s)
     rewind_30_button.grid(row=3, column=2, padx=5, pady=5)
-
     progress_30_button = ttk.Button(control_frame, text="Progress (30s)", command=progress_30s)
     progress_30_button.grid(row=3, column=3, padx=5, pady=5)
 
-    timer_entry = ttk.Entry(control_frame, width=10)
-    timer_entry.grid(row=4, column=0, padx=5, pady=5, columnspan=2)
-    timer_entry.insert(0, "00:00")
+    timer_label = ttk.Label(control_frame, text="00:00 / 00:00")
+    timer_label.grid(row=4, column=1, padx=5, pady=5, columnspan=2)
 
-    seek_button = ttk.Button(control_frame, text="Seek", command=seek_to_time)
-    seek_button.grid(row=4, column=2, padx=5, pady=5)
-
-    # display "Now Playing" label
-        # get and format the filename of the first video file
+    #display "Now Playing" label
     filename = os.path.basename(files[0])
     display_name = filename[5:] if filename.startswith("CAM") else filename
-        # display "Now Playing" label with the formatted filename
     now_playing_label = ttk.Label(control_frame, text=f"Now playing: {display_name}")
     now_playing_label.grid(row=6, column=0, padx=5, pady=5, columnspan=3)
-
-    update_timer()
 
     seek_bar = ttk.Scale(
         control_frame,
@@ -189,8 +168,9 @@ def create_gui(files):
         orient="horizontal",
         command=on_seek
     )
-    seek_bar.grid(row=5, column=0, padx=5, pady=5, columnspan=3, sticky="ew")
-    root.protocol("WM_DELETE_WINDOW", on_closing)
+    seek_bar.grid(row=5, column=1, padx=5, pady=5, columnspan=3, sticky="ew")
+
+    update_timer()
     update_seek_bar()
     root.mainloop()
 
