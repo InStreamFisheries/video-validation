@@ -5,7 +5,7 @@ from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu
 from video_player import play_videos
 
 file_pattern = re.compile(r"^(CAM\d+)_(\d{8}_\d{4})\.mp4$")
-camera_files = defaultdict(lambda: defaultdict(lambda: defaultdict(dict))) 
+camera_files = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 icon_path = None
 
 config = {
@@ -40,10 +40,10 @@ def load_camera_files():
     rec_path = filedialog.askdirectory(title="Select the REC Folder")
     if not rec_path:
         print("No directory selected.")
-        return False 
+        return False
 
-    config["rec_path"] = rec_path 
-    camera_files.clear() 
+    config["rec_path"] = rec_path
+    camera_files.clear()
 
     for cam_num in range(1, 11):
         cam_folder = os.path.join(rec_path, f"CAM{cam_num}")
@@ -86,7 +86,7 @@ def display_summary():
 def show_navigation_ui():
     root = Tk()
     root.title("Video Navigation")
-    root.geometry("600x400")  
+    root.geometry("600x400")
     if icon_path:
         try:
             root.iconbitmap(icon_path)
@@ -100,8 +100,7 @@ def show_navigation_ui():
     day_var = StringVar(root, value="Select Day")
     time_var = StringVar(root, value="Select Time")
 
-    saved_rec_path = get_saved_rec_path()
-    rec_path_label_text = f"Selected Drive: {saved_rec_path}" if saved_rec_path else "No Drive Selected"
+    rec_path_label_text = f"Selected Drive: {get_saved_rec_path()}" if get_saved_rec_path() else "No Drive Selected"
     drive_path_label = Label(root, text=rec_path_label_text, wraplength=400, anchor="w")
     drive_path_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
 
@@ -146,13 +145,13 @@ def show_navigation_ui():
         if selected_year in camera_files and selected_month in camera_files[selected_year] and selected_day in camera_files[selected_year][selected_month]:
             times = sorted(camera_files[selected_year][selected_month][selected_day].keys())
             for raw_time in times:
-                # Remove leading `_` and format as HH:MM
+                # remove leading `_` and format as HH:MM
                 formatted_time = f"{raw_time[1:3]}:{raw_time[3:]}"
                 time_menu['menu'].add_command(
                     label=formatted_time,
                     command=lambda ft=formatted_time, rt=raw_time: set_time(ft, rt)
                 )
-                
+
     # i dont really like this? i think there is a better way to pass the var without making a new function
     def set_time(formatted_time, raw_time):
         time_var.set(formatted_time)  # formatted time, for dd
