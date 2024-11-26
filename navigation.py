@@ -60,9 +60,6 @@ def load_camera_files():
 
     return bool(camera_files)
 
-def get_saved_rec_path():
-    return config.get("rec_path")
-
 def display_summary():
     unique_cameras = set()
     total_timestamps = 0
@@ -78,15 +75,12 @@ def display_summary():
                     total_size_gb += sum(os.path.getsize(file) for file in files)
 
     total_size_gb /= (1024 ** 3)
-    print(f"\nSummary of Available Footage:")
-    print(f"Total cameras found: {len(unique_cameras)}")
-    print(f"Total timestamp chunks found: {total_timestamps}")
-    print(f"Total footage size: {total_size_gb:.2f} GB\n")
+    return len(unique_cameras), total_timestamps, total_size_gb
 
 def show_navigation_ui():
     root = Tk()
     root.title("Video Navigation")
-    root.geometry("600x400")
+    root.geometry("325x350")
     if icon_path:
         try:
             root.iconbitmap(icon_path)
@@ -100,15 +94,28 @@ def show_navigation_ui():
     day_var = StringVar(root, value="Select Day")
     time_var = StringVar(root, value="Select Time")
 
-    rec_path_label_text = f"Selected Drive: {get_saved_rec_path()}" if get_saved_rec_path() else "No Drive Selected"
+    rec_path_label_text = f"Selected Drive: {config.get('rec_path', 'No Drive Selected')}"
     drive_path_label = Label(root, text=rec_path_label_text, wraplength=400, anchor="w")
     drive_path_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
+
+    summary_label_cameras = Label(root, text="Total cameras found:\n0", anchor="w", justify="left")
+    summary_label_timestamps = Label(root, text="Total timestamp chunks:\n0", anchor="w", justify="left")
+    summary_label_size = Label(root, text="Total footage size:\n0.00 GB", anchor="w", justify="left")
+    summary_label_cameras.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    summary_label_timestamps.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    summary_label_size.grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+    def update_summary():
+        unique_cameras, total_timestamps, total_size_gb = display_summary()
+        summary_label_cameras.config(text=f"Total cameras found:\n{unique_cameras}")
+        summary_label_timestamps.config(text=f"Total timestamp chunks:\n{total_timestamps}")
+        summary_label_size.config(text=f"Total footage size:\n{total_size_gb:.2f} GB")
 
     def select_drive():
         if load_camera_files():
             drive_path_label.config(text=f"Selected Drive: {config['rec_path']}")
-            display_summary()
             update_years()
+            update_summary()
 
     def update_years():
         year_menu['menu'].delete(0, 'end')
@@ -158,29 +165,38 @@ def show_navigation_ui():
         time_var.raw_time = raw_time  # raw time
 
 
-
     year_var.trace("w", update_months)
     month_var.trace("w", update_days)
     day_var.trace("w", update_times)
 
-    Label(root, text="Year:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+    # adjust column weights for alignment
+    root.grid_columnconfigure(0, weight=1)  # left padding
+    root.grid_columnconfigure(1, weight=0)  # space for labels
+    root.grid_columnconfigure(2, weight=0)  # space for menus
+    root.grid_columnconfigure(3, weight=1)  # right padding
+
+    Label(root, text="Year:", anchor="e").grid(row=2, column=1, padx=(0, 2.5), pady=5, sticky="e")
     year_menu = OptionMenu(root, year_var, "Select Year")
-    year_menu.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
+    year_menu.grid(row=2, column=2, padx=(5, 0), pady=5, sticky="e")
+    year_menu.config(width=10)
 
-    Label(root, text="Month:").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+    Label(root, text="Month:", anchor="e").grid(row=3, column=1, padx=(0, 2.5), pady=5, sticky="e")
     month_menu = OptionMenu(root, month_var, "Select Month")
-    month_menu.grid(row=3, column=1, padx=10, pady=10, sticky="ew")
+    month_menu.grid(row=3, column=2, padx=(5, 0), pady=5, sticky="e")
+    month_menu.config(width=10)
 
-    Label(root, text="Day:").grid(row=4, column=0, padx=10, pady=10, sticky="e")
+    Label(root, text="Day:", anchor="e").grid(row=4, column=1, padx=(0, 2.5), pady=5, sticky="e")
     day_menu = OptionMenu(root, day_var, "Select Day")
-    day_menu.grid(row=4, column=1, padx=10, pady=10, sticky="ew")
+    day_menu.grid(row=4, column=2, padx=(5, 0), pady=5, sticky="e")
+    day_menu.config(width=10)
 
-    Label(root, text="Time:").grid(row=5, column=0, padx=10, pady=10, sticky="e")
+    Label(root, text="Time:", anchor="e").grid(row=5, column=1, padx=(0, 2.5), pady=5, sticky="e")
     time_menu = OptionMenu(root, time_var, "Select Time")
-    time_menu.grid(row=5, column=1, padx=10, pady=10, sticky="ew")
+    time_menu.grid(row=5, column=2, padx=(5, 0), pady=5, sticky="e")
+    time_menu.config(width=10)
 
-    drive_button = Button(root, text="Select Drive", command=select_drive)
-    drive_button.grid(row=1, column=0, columnspan=2, pady=10, sticky="ew")
+    drive_button = Button(root, text="Select Drive", command=select_drive, width=20)
+    drive_button.grid(row=1, column=0, columnspan=1, padx=2.5, pady=10, sticky="ew")
 
     def play_selected_videos():
         vlc_path = setup_vlc_path()
@@ -194,10 +210,7 @@ def show_navigation_ui():
             except KeyError:
                 print("Error: Selected time not found.")
 
-    play_button = Button(root, text="Play Selected", command=play_selected_videos)
-    play_button.grid(row=6, column=0, columnspan=2, pady=20, sticky="ew")
-
-    root.grid_columnconfigure(0, weight=1)
-    root.grid_columnconfigure(1, weight=1)
+    play_button = Button(root, text="Play Selected", command=play_selected_videos, width=20)
+    play_button.grid(row=6, column=0, columnspan=1, padx=2.5, pady=10, sticky="ew")
 
     root.mainloop()

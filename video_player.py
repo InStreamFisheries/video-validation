@@ -50,14 +50,12 @@ def initialize_players(files, screen_width, screen_height):
 def start_playback():
     for player in players:
         player.play()
-
 def toggle_play_pause():
     for player in players:
         if player.is_playing():
             player.pause()
         else:
             player.play()
-
 def stop():
     for player in players:
         player.stop()
@@ -67,12 +65,14 @@ def stop():
 def change_speed(rate):
     for player in players:
         player.set_rate(rate)
+
 def rewind_1_4_sec():
     for player in players:
         player.set_time(max(player.get_time() - 250, 0))
 def progress_1_4_sec():
     for player in players:
         player.set_time(max(player.get_time() + 250, 0))
+
 def rewind_30s():
     for player in players:
         player.set_time(max(player.get_time() - 30000, 0))
