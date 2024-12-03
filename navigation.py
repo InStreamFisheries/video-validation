@@ -49,6 +49,8 @@ def load_camera_files():
         cam_folder = os.path.join(rec_path, f"CAM{cam_num}")
         if os.path.exists(cam_folder):
             for file in os.listdir(cam_folder):
+                if not file.endswith(".mp4") or os.path.isdir(os.path.join(cam_folder, file)):
+                    continue
                 match = file_pattern.match(file)
                 if match:
                     cam_id, timestamp = match.groups()
@@ -71,8 +73,27 @@ def display_summary():
                 for time in camera_files[year][month][day]:
                     files = camera_files[year][month][day][time]
                     unique_cameras.update(os.path.basename(file).split('_')[0] for file in files)
-                    total_timestamps += 1
-                    total_size_gb += sum(os.path.getsize(file) for file in files)
+
+    # count total timestamps based on CAM1 folder
+    cam1_folder = os.path.join(config["rec_path"], "CAM1")
+    if os.path.exists(cam1_folder):
+        for file in os.listdir(cam1_folder):
+            if file.endswith(".mp4") and not os.path.isdir(os.path.join(cam1_folder, file)):
+                total_timestamps += 1
+
+    # Include size from all camera folders and corrupted folders
+    for cam_num in range(1, 11):
+        cam_folder = os.path.join(config["rec_path"], f"CAM{cam_num}")
+        if os.path.exists(cam_folder):
+            for file in os.listdir(cam_folder):
+                if file.endswith(".mp4") and not os.path.isdir(os.path.join(cam_folder, file)):
+                    total_size_gb += os.path.getsize(os.path.join(cam_folder, file))
+
+        corrupted_folder = os.path.join(cam_folder, "corrupted")
+        if os.path.exists(corrupted_folder):
+            for file in os.listdir(corrupted_folder):
+                if file.endswith(".mp4") and not os.path.isdir(os.path.join(corrupted_folder, file)):
+                    total_size_gb += os.path.getsize(os.path.join(corrupted_folder, file))
 
     total_size_gb /= (1024 ** 3)
     return len(unique_cameras), total_timestamps, total_size_gb
