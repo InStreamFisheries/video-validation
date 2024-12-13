@@ -138,7 +138,8 @@ def create_gui(files):
 
     speed_label = ttk.Label(control_frame, text="Speed:")
     speed_label.grid(row=1, column=0, padx=5, pady=5)
-    for i, rate in enumerate([1, 2, 4]):
+    # can change this based on people's needs. Seems some projects don't want 4x, want more granular speed changes? to add speeds just add ",x"
+    for i, rate in enumerate([0.5, 1, 2]):
         speed_button = ttk.Button(control_frame, text=f"{rate}x", command=lambda r=rate: change_speed(r))
         speed_button.grid(row=1, column=i + 1, padx=5, pady=5)
 
