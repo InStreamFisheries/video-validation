@@ -1,10 +1,10 @@
 import os
 import re
 from collections import defaultdict
-from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu
+from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu, Frame
 from video_player import play_videos
 
-file_pattern = re.compile(r"^(CAM\d+)_(\d{8}_\d{4})\.mp4$")
+file_pattern = re.compile(r"^(CAM\d+)_((\d{8})_(\d{6}|\d{4}))\.(mp4|ts)$")
 camera_files = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 icon_path = None
 
@@ -17,7 +17,7 @@ def setup_vlc_path():
     if config["vlc_path"]:
         return config["vlc_path"]
 
-    default_vlc_path = r"C:\Program Files\VideoLAN\VLC\vlc.exe"
+    default_vlc_path = r"C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
     if os.path.exists(default_vlc_path):
         config["vlc_path"] = default_vlc_path
         return default_vlc_path
@@ -43,23 +43,27 @@ def load_camera_files():
         return False
 
     config["rec_path"] = rec_path
+    print("Selected REC path:", rec_path)
     camera_files.clear()
 
     for cam_num in range(1, 11):
         cam_folder = os.path.join(rec_path, f"CAM{cam_num}")
         if os.path.exists(cam_folder):
             for file in os.listdir(cam_folder):
-                if not file.endswith(".mp4") or os.path.isdir(os.path.join(cam_folder, file)):
+                if os.path.isdir(os.path.join(cam_folder, file)):
+                    continue
+                if not file.lower().endswith((".mp4", ".ts")):
                     continue
                 match = file_pattern.match(file)
                 if match:
-                    cam_id, timestamp = match.groups()
-                    year, month, day, time = timestamp[:4], timestamp[4:6], timestamp[6:8], timestamp[8:]
-                    if time not in camera_files[year][month][day]:
-                        camera_files[year][month][day][time] = []
+                    cam_id, timestamp, date_part, time_part, _ = match.groups()
+                    year, month, day = date_part[:4], date_part[4:6], date_part[6:8]
+                    if time_part not in camera_files[year][month][day]:
+                        camera_files[year][month][day][time_part] = []
                     file_path = os.path.join(cam_folder, file)
-                    camera_files[year][month][day][time].append(file_path)
+                    camera_files[year][month][day][time_part].append(file_path)
 
+    print("Camera files found:", sum(len(times) for year in camera_files.values() for month in year.values() for day in month.values() for times in day.values()))
     return bool(camera_files)
 
 def display_summary():
@@ -74,25 +78,23 @@ def display_summary():
                     files = camera_files[year][month][day][time]
                     unique_cameras.update(os.path.basename(file).split('_')[0] for file in files)
 
-    # count total timestamps based on CAM1 folder
     cam1_folder = os.path.join(config["rec_path"], "CAM1")
     if os.path.exists(cam1_folder):
         for file in os.listdir(cam1_folder):
-            if file.endswith(".mp4") and not os.path.isdir(os.path.join(cam1_folder, file)):
+            if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(os.path.join(cam1_folder, file)):
                 total_timestamps += 1
 
-    # Include size from all camera folders and corrupted folders
     for cam_num in range(1, 11):
         cam_folder = os.path.join(config["rec_path"], f"CAM{cam_num}")
         if os.path.exists(cam_folder):
             for file in os.listdir(cam_folder):
-                if file.endswith(".mp4") and not os.path.isdir(os.path.join(cam_folder, file)):
+                if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(os.path.join(cam_folder, file)):
                     total_size_gb += os.path.getsize(os.path.join(cam_folder, file))
 
         corrupted_folder = os.path.join(cam_folder, "corrupted")
         if os.path.exists(corrupted_folder):
             for file in os.listdir(corrupted_folder):
-                if file.endswith(".mp4") and not os.path.isdir(os.path.join(corrupted_folder, file)):
+                if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(os.path.join(corrupted_folder, file)):
                     total_size_gb += os.path.getsize(os.path.join(corrupted_folder, file))
 
     total_size_gb /= (1024 ** 3)
@@ -101,7 +103,11 @@ def display_summary():
 def show_navigation_ui():
     root = Tk()
     root.title("Video Navigation")
-    root.geometry("325x350")
+    root.geometry("325x325")
+    root.grid_columnconfigure(0, weight=1)
+    root.grid_columnconfigure(1, weight=0)
+    root.grid_columnconfigure(2, weight=0)
+
     if icon_path:
         try:
             root.iconbitmap(icon_path)
@@ -116,15 +122,16 @@ def show_navigation_ui():
     time_var = StringVar(root, value="Select Time")
 
     rec_path_label_text = f"Selected Drive: {config.get('rec_path', 'No Drive Selected')}"
-    drive_path_label = Label(root, text=rec_path_label_text, wraplength=400, anchor="w")
-    drive_path_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
+    drive_path_label = Label(root, text=rec_path_label_text, wraplength=300, anchor="w")
+    drive_path_label.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="w")
 
     summary_label_cameras = Label(root, text="Total cameras found:\n0", anchor="w", justify="left")
     summary_label_timestamps = Label(root, text="Total timestamp chunks:\n0", anchor="w", justify="left")
     summary_label_size = Label(root, text="Total footage size:\n0.00 GB", anchor="w", justify="left")
-    summary_label_cameras.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-    summary_label_timestamps.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-    summary_label_size.grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+    summary_label_cameras.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+    summary_label_timestamps.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+    summary_label_size.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky="w")
 
     def update_summary():
         unique_cameras, total_timestamps, total_size_gb = display_summary()
@@ -173,51 +180,43 @@ def show_navigation_ui():
         if selected_year in camera_files and selected_month in camera_files[selected_year] and selected_day in camera_files[selected_year][selected_month]:
             times = sorted(camera_files[selected_year][selected_month][selected_day].keys())
             for raw_time in times:
-                # remove leading `_` and format as HH:MM
-                formatted_time = f"{raw_time[1:3]}:{raw_time[3:]}"
-                time_menu['menu'].add_command(
-                    label=formatted_time,
-                    command=lambda ft=formatted_time, rt=raw_time: set_time(ft, rt)
-                )
-
-    # i dont really like this? i think there is a better way to pass the var without making a new function
-    def set_time(formatted_time, raw_time):
-        time_var.set(formatted_time)  # formatted time, for dd
-        time_var.raw_time = raw_time  # raw time
-
+                if len(raw_time) == 6:
+                    formatted_time = f"{raw_time[0:2]}:{raw_time[2:4]}:{raw_time[4:6]}"
+                elif len(raw_time) == 4:
+                    formatted_time = f"{raw_time[0:2]}:{raw_time[2:4]}:00"
+                else:
+                    formatted_time = "00:00:00"
+                def callback(rt=raw_time, ft=formatted_time):
+                    time_var.set(ft)
+                    setattr(time_var, 'raw_time', rt)
+                time_menu['menu'].add_command(label=formatted_time, command=callback)
 
     year_var.trace("w", update_months)
     month_var.trace("w", update_days)
     day_var.trace("w", update_times)
 
-    # adjust column weights for alignment
-    root.grid_columnconfigure(0, weight=1)  # left padding
-    root.grid_columnconfigure(1, weight=0)  # space for labels
-    root.grid_columnconfigure(2, weight=0)  # space for menus
-    root.grid_columnconfigure(3, weight=1)  # right padding
-
-    Label(root, text="Year:", anchor="e").grid(row=2, column=1, padx=(0, 2.5), pady=5, sticky="e")
+    Label(root, text="Year:").grid(row=2, column=1, sticky="e")
     year_menu = OptionMenu(root, year_var, "Select Year")
-    year_menu.grid(row=2, column=2, padx=(5, 0), pady=5, sticky="e")
+    year_menu.grid(row=2, column=2, padx=(5, 10), pady=2, sticky="e")
     year_menu.config(width=10)
 
-    Label(root, text="Month:", anchor="e").grid(row=3, column=1, padx=(0, 2.5), pady=5, sticky="e")
+    Label(root, text="Month:").grid(row=3, column=1, sticky="e")
     month_menu = OptionMenu(root, month_var, "Select Month")
-    month_menu.grid(row=3, column=2, padx=(5, 0), pady=5, sticky="e")
+    month_menu.grid(row=3, column=2, padx=(5, 10), pady=2, sticky="e")
     month_menu.config(width=10)
 
-    Label(root, text="Day:", anchor="e").grid(row=4, column=1, padx=(0, 2.5), pady=5, sticky="e")
+    Label(root, text="Day:").grid(row=4, column=1, sticky="e")
     day_menu = OptionMenu(root, day_var, "Select Day")
-    day_menu.grid(row=4, column=2, padx=(5, 0), pady=5, sticky="e")
+    day_menu.grid(row=4, column=2, padx=(5, 10), pady=2, sticky="e")
     day_menu.config(width=10)
 
-    Label(root, text="Time:", anchor="e").grid(row=5, column=1, padx=(0, 2.5), pady=5, sticky="e")
+    Label(root, text="Time:").grid(row=5, column=1, sticky="e")
     time_menu = OptionMenu(root, time_var, "Select Time")
-    time_menu.grid(row=5, column=2, padx=(5, 0), pady=5, sticky="e")
+    time_menu.grid(row=5, column=2, padx=(5, 10), pady=2, sticky="e")
     time_menu.config(width=10)
 
-    drive_button = Button(root, text="Select Drive", command=select_drive, width=20)
-    drive_button.grid(row=1, column=0, columnspan=1, padx=2.5, pady=10, sticky="ew")
+    drive_button = Button(root, text="Select Drive", command=select_drive)
+    drive_button.grid(row=1, column=0, columnspan=3, padx=40, pady=10, sticky="ew")
 
     def play_selected_videos():
         vlc_path = setup_vlc_path()
@@ -231,7 +230,7 @@ def show_navigation_ui():
             except KeyError:
                 print("Error: Selected time not found.")
 
-    play_button = Button(root, text="Play Selected", command=play_selected_videos, width=20)
-    play_button.grid(row=6, column=0, columnspan=1, padx=2.5, pady=10, sticky="ew")
+    play_button = Button(root, text="Play Selected", command=play_selected_videos)
+    play_button.grid(row=6, column=0, columnspan=3, padx=40, pady=10, sticky="ew")
 
     root.mainloop()
