@@ -34,7 +34,7 @@ def on_seek(value):
 # initialize VLC instances for the given camera video files
 def initialize_players(files):
     global players
-    instances = [vlc.Instance("--file-caching=1000", "--network-caching=1000") for _ in files]
+    instances = [vlc.Instance("--file-caching=1000", "--network-caching=1000", "--avcodec-hw=dxva2") for _ in files]
     players = []
 
     for idx, (instance, file) in enumerate(zip(instances, files)):
@@ -189,8 +189,11 @@ def create_gui(files):
     parts = filename.split("_")
     if len(parts) >= 3:
         time_part = parts[2][:6]  # HHMMSS
-        h, m, s = int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6])
-        root.footage_start_time = h * 3600 + m * 60 + s
+        try:
+            h, m, s = int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6])
+            root.footage_start_time = h * 3600 + m * 60 + s
+        except:
+            root.footage_start_time = 0
     else:
         root.footage_start_time = 0
 
