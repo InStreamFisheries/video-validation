@@ -3,6 +3,7 @@ import os
 import re
 import tkinter as tk
 from tkinter import ttk, Label
+import threading
 
 players = []
 frames = []  # to store frames for each player
@@ -41,12 +42,16 @@ def initialize_players(files):
         player = instance.media_player_new()
         media = instance.media_new(file)
         player.set_media(media)
-
         frame = frames[idx]
         player.set_hwnd(frame.winfo_id())
-
-        player.play()
         players.append(player)
+
+    # pre-buffer: start and immediately pause to warm-up
+    for player in players:
+        player.play()
+        while player.get_state() != vlc.State.Playing:
+            continue
+        player.pause()
 
 def start_playback():
     for player in players:
