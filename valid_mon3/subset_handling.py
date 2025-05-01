@@ -8,11 +8,9 @@ from io import StringIO
 from datetime import datetime
 
 def sample_csv_subset():
-    # Setup file picker
     root = tk.Tk()
     root.withdraw()
 
-    # Step 1: Select CSV file
     input_path = filedialog.askopenfilename(
         title="Select your CSV file (tab- or comma-separated)",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
@@ -20,8 +18,7 @@ def sample_csv_subset():
     if not input_path or not os.path.isfile(input_path):
         print("Invalid file path.")
         return
-
-    # Step 2: Ask for sample percentage
+    
     try:
         sample_percent = float(input("Enter the percentage of footage to sample (e.g., 5 for 5%): ").strip())
         if not (0.1 <= sample_percent <= 100):
@@ -31,7 +28,6 @@ def sample_csv_subset():
         print("Invalid percentage input.")
         return
 
-    # Setup logging
     log_lines = []
     def log(msg):
         print(msg)
@@ -42,7 +38,6 @@ def sample_csv_subset():
     log(f"Input file: {input_path}")
     log(f"Sampling percentage: {sample_percent}%")
 
-    # Step 3: Read CSV and detect delimiter
     try:
         with open(input_path, 'r', encoding='utf-8-sig') as f:
             lines = f.readlines()
@@ -72,12 +67,10 @@ def sample_csv_subset():
         write_log_file(input_path, log_lines, timestamp)
         return
 
-    # Step 4: Sample
     sample_size = max(1, int((sample_percent / 100.0) * len(df)))
     log(f"Total rows: {len(df)} | Sampling {sample_size} rows")
     sampled_df = df.sample(n=sample_size, random_state=42)
 
-    # Step 5: Save output to same folder
     input_basename = os.path.splitext(os.path.basename(input_path))[0]
     input_dir = os.path.dirname(input_path)
     output_filename = f"{input_basename}_sample_{int(sample_percent)}pct_{timestamp}.csv"
