@@ -1,8 +1,20 @@
 import os
 import re
+import threading
+import logging
 from collections import defaultdict
-from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu, Frame
+from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu, Frame, Toplevel
+
 from video_player import play_videos
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("app_debug.log", mode='w'),
+        logging.StreamHandler()
+    ]
+)
 
 file_pattern = re.compile(r"^(CAM\d+)_((\d{8})_(\d{6}|\d{4}))\.(mp4|ts)$")
 camera_files = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
@@ -32,41 +44,54 @@ def setup_vlc_path():
         config["vlc_path"] = vlc_path
         return vlc_path
     else:
-        print("VLC path not selected. Exiting.")
+        logging.error("VLC path not selected. Exiting.")
         exit()
 
 def load_camera_files():
     global camera_files
     rec_path = filedialog.askdirectory(title="Select the REC Folder")
     if not rec_path:
-        print("No directory selected.")
+        logging.warning("No directory selected.")
         return False
 
     config["rec_path"] = rec_path
-    print("Selected REC path:", rec_path)
+    logging.info(f"Selected REC path: {rec_path}")
     camera_files.clear()
 
     for cam_num in range(1, 11):
         cam_folder = os.path.join(rec_path, f"CAM{cam_num}")
+        logging.debug(f"Scanning folder: {cam_folder}")
+
         if os.path.exists(cam_folder):
             for file in os.listdir(cam_folder):
-                if os.path.isdir(os.path.join(cam_folder, file)):
+                full_path = os.path.join(cam_folder, file)
+                if os.path.isdir(full_path):
+                    logging.debug(f"Skipping directory: {file}")
                     continue
                 if not file.lower().endswith((".mp4", ".ts")):
+                    logging.debug(f"Skipping non-video file: {file}")
                     continue
                 match = file_pattern.match(file)
                 if match:
                     cam_id, timestamp, date_part, time_part, _ = match.groups()
                     year, month, day = date_part[:4], date_part[4:6], date_part[6:8]
-                    if time_part not in camera_files[year][month][day]:
-                        camera_files[year][month][day][time_part] = []
-                    file_path = os.path.join(cam_folder, file)
-                    camera_files[year][month][day][time_part].append(file_path)
+                    file_path = full_path
+                    camera_files[year][month][day].setdefault(time_part, []).append(file_path)
+                    logging.debug(f"Matched: {file} -> {year}/{month}/{day} {time_part}")
+                else:
+                    logging.debug(f"Unmatched file: {file}")
+        else:
+            logging.warning(f"Camera folder does not exist: {cam_folder}")
 
-    print("Camera files found:", sum(len(times) for year in camera_files.values() for month in year.values() for day in month.values() for times in day.values()))
+    total_files = sum(len(times) for year in camera_files.values()
+                      for month in year.values()
+                      for day in month.values()
+                      for times in day.values())
+    logging.info(f"Camera files loaded: {total_files}")
     return bool(camera_files)
 
 def display_summary():
+    logging.debug("Generating summary statistics...")
     unique_cameras = set()
     total_timestamps = 0
     total_size_gb = 0
@@ -82,22 +107,30 @@ def display_summary():
     if os.path.exists(cam1_folder):
         for file in os.listdir(cam1_folder):
             if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(os.path.join(cam1_folder, file)):
+                logging.debug(f"Tallying timestamp file: {file}")
                 total_timestamps += 1
 
     for cam_num in range(1, 11):
         cam_folder = os.path.join(config["rec_path"], f"CAM{cam_num}")
         if os.path.exists(cam_folder):
             for file in os.listdir(cam_folder):
-                if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(os.path.join(cam_folder, file)):
-                    total_size_gb += os.path.getsize(os.path.join(cam_folder, file))
+                full_path = os.path.join(cam_folder, file)
+                if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(full_path):
+                    total_size_gb += os.path.getsize(full_path)
 
         corrupted_folder = os.path.join(cam_folder, "corrupted")
         if os.path.exists(corrupted_folder):
             for file in os.listdir(corrupted_folder):
-                if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(os.path.join(corrupted_folder, file)):
-                    total_size_gb += os.path.getsize(os.path.join(corrupted_folder, file))
+                full_path = os.path.join(corrupted_folder, file)
+                if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(full_path):
+                    total_size_gb += os.path.getsize(full_path)
 
     total_size_gb /= (1024 ** 3)
+
+    logging.info(f"Unique cameras: {len(unique_cameras)}")
+    logging.info(f"Total timestamps (CAM1): {total_timestamps}")
+    logging.info(f"Total size of footage: {total_size_gb:.2f} GB")
+
     return len(unique_cameras), total_timestamps, total_size_gb
 
 def show_navigation_ui():
@@ -112,9 +145,9 @@ def show_navigation_ui():
         try:
             root.iconbitmap(icon_path)
         except Exception as e:
-            print(f"Failed to load icon in navigation: {e}. Using default icon.")
+            logging.warning(f"Failed to load icon: {e}")
     else:
-        print("Icon path not set in navigation.")
+        logging.debug("Icon path not set.")
 
     year_var = StringVar(root, value="Select Year")
     month_var = StringVar(root, value="Select Month")
@@ -138,12 +171,6 @@ def show_navigation_ui():
         summary_label_cameras.config(text=f"Total cameras found:\n{unique_cameras}")
         summary_label_timestamps.config(text=f"Total timestamp chunks:\n{total_timestamps}")
         summary_label_size.config(text=f"Total footage size:\n{total_size_gb:.2f} GB")
-
-    def select_drive():
-        if load_camera_files():
-            drive_path_label.config(text=f"Selected Drive: {config['rec_path']}")
-            update_years()
-            update_summary()
 
     def update_years():
         year_menu['menu'].delete(0, 'end')
@@ -215,7 +242,37 @@ def show_navigation_ui():
     time_menu.grid(row=5, column=2, padx=(5, 10), pady=2, sticky="e")
     time_menu.config(width=10)
 
-    drive_button = Button(root, text="Select Drive", command=select_drive)
+    def threaded_load():
+        loading_popup = Toplevel(root)
+        loading_popup.title("Loading...")
+        Label(loading_popup, text="Scanning drive, please wait...").pack(padx=20, pady=20)
+
+        root.update_idletasks()
+        root_x = root.winfo_x()
+        root_y = root.winfo_y()
+        root_w = root.winfo_width()
+        root_h = root.winfo_height()
+
+        popup_w = 250
+        popup_h = 80
+        pos_x = root_x + (root_w // 2) - (popup_w // 2)
+        pos_y = root_y + (root_h // 2) - (popup_h // 2)
+
+        loading_popup.geometry(f"{popup_w}x{popup_h}+{pos_x}+{pos_y}")
+        loading_popup.transient(root)
+        loading_popup.grab_set()
+        loading_popup.update()
+
+        def background():
+            if load_camera_files():
+                drive_path_label.config(text=f"Selected Drive: {config['rec_path']}")
+                update_years()
+                update_summary()
+            loading_popup.destroy()
+
+        threading.Thread(target=background).start()
+
+    drive_button = Button(root, text="Select Drive", command=threaded_load)
     drive_button.grid(row=1, column=0, columnspan=3, padx=40, pady=10, sticky="ew")
 
     def play_selected_videos():
@@ -228,7 +285,7 @@ def show_navigation_ui():
             try:
                 play_videos(vlc_path, camera_files[selected_year][selected_month][selected_day][selected_time])
             except KeyError:
-                print("Error: Selected time not found.")
+                logging.error("Selected time not found.")
 
     play_button = Button(root, text="Play Selected", command=play_selected_videos)
     play_button.grid(row=6, column=0, columnspan=3, padx=40, pady=10, sticky="ew")
