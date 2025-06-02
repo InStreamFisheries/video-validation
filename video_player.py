@@ -96,8 +96,6 @@ def initialize_players(files):
             logging.error(f"Error during pre-buffer play for player {idx+1}: {e}")
 
     time.sleep(1.0)
-
-    # pause all players together
     for idx, player in enumerate(players):
         try:
             player.pause()
@@ -214,6 +212,10 @@ def on_key_press(event):
     if event.keysym == "Return":
         logging.debug("Return key pressed")
         toggle_play_pause()
+    elif event.keysym == "F11":
+        is_fullscreen = root.attributes("-fullscreen")
+        root.attributes("-fullscreen", not is_fullscreen)
+        logging.debug(f"Fullscreen toggled: now {'on' if not is_fullscreen else 'off'}")
 
 def create_gui(files):
     global root, frames, now_playing_label, timer_label, seek_bar, overlay_label, last_files
@@ -223,6 +225,20 @@ def create_gui(files):
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.title("Video Playback")
     root.bind("<Return>", on_key_press)
+    root.bind("<F11>", on_key_press)
+
+    try:
+        root.state('zoomed')  # Maximized on Windows
+        logging.debug("Window state set to zoomed (maximized)")
+    except Exception as e:
+        logging.warning(f"Zoomed mode failed: {e}")
+
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() // 2) - (root.winfo_width() // 2)
+    y = (root.winfo_screenheight() // 2) - (root.winfo_height() // 2)
+    root.geometry(f"+{x}+{y}")
+    root.lift()
+    root.focus_force()
 
     if icon_path:
         try:
