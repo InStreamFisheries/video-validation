@@ -27,6 +27,7 @@ updating_seek_bar = False
 icon_path = None
 shutdown_called = False
 last_files = []
+last_known_rate = 1.0
 
 def cleanup_players():
     logging.debug("Cleanup: Stopping all VLC players")
@@ -46,8 +47,12 @@ def update_seek_bar():
     if players and seek_bar:
         current_time_ms = players[0].get_time()
         duration_ms = players[0].get_length()
+        try:
+            rate = players[0].get_rate()
+        except:
+            rate = 1.0
 
-        if duration_ms > 0:
+        if duration_ms > 0 and rate <= 2.0:
             updating_seek_bar = True
             seek_bar.set((current_time_ms / duration_ms) * 100)
             updating_seek_bar = False
@@ -72,7 +77,13 @@ def initialize_players(files):
     global players
     logging.debug("Initializing VLC instances...")
 
-    options = ["--file-caching=1000", "--network-caching=1000"]
+    options = [
+        "--file-caching=1000",
+        "--network-caching=1000",
+        "--avcodec-hw=none",
+        "--no-video-title-show",
+        "--quiet"
+    ]
     instances = [vlc.Instance(*options) for _ in files]
     players = []
 
@@ -95,7 +106,8 @@ def initialize_players(files):
         except Exception as e:
             logging.error(f"Error during pre-buffer play for player {idx+1}: {e}")
 
-    time.sleep(1.0)
+    time.sleep(2.0)
+
     for idx, player in enumerate(players):
         try:
             player.pause()
@@ -136,6 +148,8 @@ def stop():
         logging.debug("GUI closed")
 
 def change_speed(rate):
+    global last_known_rate
+    last_known_rate = rate
     for idx, player in enumerate(players):
         try:
             player.set_rate(rate)
@@ -228,7 +242,7 @@ def create_gui(files):
     root.bind("<F11>", on_key_press)
 
     try:
-        root.state('zoomed')  # Maximized on Windows
+        root.state('zoomed')
         logging.debug("Window state set to zoomed (maximized)")
     except Exception as e:
         logging.warning(f"Zoomed mode failed: {e}")
