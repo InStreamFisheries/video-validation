@@ -294,7 +294,7 @@ def create_gui(files):
     ttk.Button(control_frame, text="Stop", command=stop).grid(row=0, column=2, padx=5, pady=5)
 
     ttk.Label(control_frame, text="Speed:").grid(row=1, column=0, padx=5, pady=5)
-    for i, rate in enumerate([0.25, 0.5, 1, 2, 4]):
+    for i, rate in enumerate([0.25, 0.5, 1, 2]):
         ttk.Button(control_frame, text=f"{rate}x", command=lambda r=rate: change_speed(r)).grid(row=1, column=i + 1, padx=5, pady=5)
 
     ttk.Button(control_frame, text="Rewind (1/4s)", command=rewind_1_4_sec).grid(row=3, column=0, padx=5, pady=5)
