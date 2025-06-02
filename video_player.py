@@ -7,6 +7,8 @@ import threading
 import logging
 import time
 import atexit
+import sys
+import subprocess
 
 # setup logging
 logging.basicConfig(
@@ -25,6 +27,8 @@ frames = []
 updating_seek_bar = False
 icon_path = None
 shutdown_called = False
+USE_HARDWARE_DECODING = True
+last_files = [] 
 
 def cleanup_players():
     logging.debug("Cleanup: Stopping all VLC players")
@@ -39,6 +43,8 @@ atexit.register(cleanup_players)
 
 def update_seek_bar():
     global updating_seek_bar
+    if not hasattr(root, 'winfo_exists') or not root.winfo_exists():
+        return
     if players and seek_bar:
         current_time_ms = players[0].get_time()
         duration_ms = players[0].get_length()
@@ -67,7 +73,12 @@ def on_seek(value):
 def initialize_players(files):
     global players
     logging.debug("Initializing VLC instances...")
-    instances = [vlc.Instance("--file-caching=1000", "--network-caching=1000", "--avcodec-hw=dxva2") for _ in files]
+
+    options = ["--file-caching=1000", "--network-caching=1000"]
+    if USE_HARDWARE_DECODING:
+        options.append("--avcodec-hw=dxva2")
+
+    instances = [vlc.Instance(*options) for _ in files]
     players = []
 
     for idx, (instance, file) in enumerate(zip(instances, files)):
@@ -82,18 +93,11 @@ def initialize_players(files):
     logging.debug("Pre-buffering players for sync...")
     for idx, player in enumerate(players):
         try:
-            start = time.time()
             player.play()
             logging.debug(f"Player {idx+1} play() called.")
-            wait_loops = 0
-            while player.get_state() != vlc.State.Playing:
-                wait_loops += 1
-                if wait_loops > 1000:
-                    logging.warning(f"Player {idx+1} failed to start playing in time.")
-                    break
+            time.sleep(0.25)
             player.pause()
-            elapsed = time.time() - start
-            logging.debug(f"Player {idx+1} pre-buffered and paused in {elapsed:.2f} seconds.")
+            logging.debug(f"Player {idx+1} pre-buffered and paused.")
         except Exception as e:
             logging.error(f"Error initializing player {idx+1}: {e}")
 
@@ -162,6 +166,8 @@ def progress_30s():
         logging.debug(f"Player {idx+1} forwarded 30s to {new_time} ms")
 
 def update_timer():
+    if not hasattr(root, 'winfo_exists') or not root.winfo_exists():
+        return
     if players:
         current_time_ms = sum(player.get_time() for player in players) // len(players)
         current_time_sec = current_time_ms // 1000
@@ -205,8 +211,21 @@ def on_key_press(event):
         logging.debug("Return key pressed")
         toggle_play_pause()
 
+def toggle_hw_decoding():
+    global USE_HARDWARE_DECODING
+    USE_HARDWARE_DECODING = not USE_HARDWARE_DECODING
+    logging.info(f"Hardware decoding toggled to: {USE_HARDWARE_DECODING}")
+    cleanup_players()
+    args = [sys.executable, sys.argv[0]] + last_files
+    logging.debug(f"Relaunching with args: {args}")
+    subprocess.Popen(args)
+    root.quit()
+    root.destroy()
+    sys.exit(0)
+
 def create_gui(files):
-    global root, frames, now_playing_label, timer_label, seek_bar, overlay_label
+    global root, frames, now_playing_label, timer_label, seek_bar, overlay_label, last_files
+    last_files = files[:]
     root = tk.Tk()
     logging.debug("Tkinter root window created.")
     root.protocol("WM_DELETE_WINDOW", on_closing)
@@ -253,6 +272,8 @@ def create_gui(files):
     play_pause_button.grid(row=0, column=1, padx=5, pady=5)
     stop_button = ttk.Button(control_frame, text="Stop", command=stop)
     stop_button.grid(row=0, column=2, padx=5, pady=5)
+    hw_toggle_button = ttk.Button(control_frame, text="Toggle HW Decoding", command=toggle_hw_decoding)
+    hw_toggle_button.grid(row=0, column=3, padx=5, pady=5)
 
     speed_label = ttk.Label(control_frame, text="Speed:")
     speed_label.grid(row=1, column=0, padx=5, pady=5)
