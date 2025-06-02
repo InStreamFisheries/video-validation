@@ -8,7 +8,6 @@ import logging
 import time
 import atexit
 import sys
-import subprocess
 
 # setup logging
 logging.basicConfig(
@@ -27,8 +26,7 @@ frames = []
 updating_seek_bar = False
 icon_path = None
 shutdown_called = False
-USE_HARDWARE_DECODING = True
-last_files = [] 
+last_files = []
 
 def cleanup_players():
     logging.debug("Cleanup: Stopping all VLC players")
@@ -75,9 +73,6 @@ def initialize_players(files):
     logging.debug("Initializing VLC instances...")
 
     options = ["--file-caching=1000", "--network-caching=1000"]
-    if USE_HARDWARE_DECODING:
-        options.append("--avcodec-hw=dxva2")
-
     instances = [vlc.Instance(*options) for _ in files]
     players = []
 
@@ -91,15 +86,24 @@ def initialize_players(files):
         players.append(player)
 
     logging.debug("Pre-buffering players for sync...")
+
+    # start all players first to begin buffering
     for idx, player in enumerate(players):
         try:
             player.play()
-            logging.debug(f"Player {idx+1} play() called.")
-            time.sleep(0.25)
-            player.pause()
-            logging.debug(f"Player {idx+1} pre-buffered and paused.")
+            logging.debug(f"Player {idx+1} play() called for pre-buffering.")
         except Exception as e:
-            logging.error(f"Error initializing player {idx+1}: {e}")
+            logging.error(f"Error during pre-buffer play for player {idx+1}: {e}")
+
+    time.sleep(1.0)
+
+    # pause all players together
+    for idx, player in enumerate(players):
+        try:
+            player.pause()
+            logging.debug(f"Player {idx+1} paused after pre-buffer.")
+        except Exception as e:
+            logging.error(f"Error pausing player {idx+1} after buffer: {e}")
 
 def start_playback():
     for idx, player in enumerate(players):
@@ -211,18 +215,6 @@ def on_key_press(event):
         logging.debug("Return key pressed")
         toggle_play_pause()
 
-def toggle_hw_decoding():
-    global USE_HARDWARE_DECODING
-    USE_HARDWARE_DECODING = not USE_HARDWARE_DECODING
-    logging.info(f"Hardware decoding toggled to: {USE_HARDWARE_DECODING}")
-    cleanup_players()
-    args = [sys.executable, sys.argv[0]] + last_files
-    logging.debug(f"Relaunching with args: {args}")
-    subprocess.Popen(args)
-    root.quit()
-    root.destroy()
-    sys.exit(0)
-
 def create_gui(files):
     global root, frames, now_playing_label, timer_label, seek_bar, overlay_label, last_files
     last_files = files[:]
@@ -268,28 +260,17 @@ def create_gui(files):
 
     initialize_players(files)
 
-    play_pause_button = ttk.Button(control_frame, text="Play/Pause", command=toggle_play_pause)
-    play_pause_button.grid(row=0, column=1, padx=5, pady=5)
-    stop_button = ttk.Button(control_frame, text="Stop", command=stop)
-    stop_button.grid(row=0, column=2, padx=5, pady=5)
-    hw_toggle_button = ttk.Button(control_frame, text="Toggle HW Decoding", command=toggle_hw_decoding)
-    hw_toggle_button.grid(row=0, column=3, padx=5, pady=5)
+    ttk.Button(control_frame, text="Play/Pause", command=toggle_play_pause).grid(row=0, column=1, padx=5, pady=5)
+    ttk.Button(control_frame, text="Stop", command=stop).grid(row=0, column=2, padx=5, pady=5)
 
-    speed_label = ttk.Label(control_frame, text="Speed:")
-    speed_label.grid(row=1, column=0, padx=5, pady=5)
-
+    ttk.Label(control_frame, text="Speed:").grid(row=1, column=0, padx=5, pady=5)
     for i, rate in enumerate([0.25, 0.5, 1, 2, 4]):
-        speed_button = ttk.Button(control_frame, text=f"{rate}x", command=lambda r=rate: change_speed(r))
-        speed_button.grid(row=1, column=i + 1, padx=5, pady=5)
+        ttk.Button(control_frame, text=f"{rate}x", command=lambda r=rate: change_speed(r)).grid(row=1, column=i + 1, padx=5, pady=5)
 
-    rewind_1_4_button = ttk.Button(control_frame, text="Rewind (1/4s)", command=rewind_1_4_sec)
-    rewind_1_4_button.grid(row=3, column=0, padx=5, pady=5)
-    progress_1_4_button = ttk.Button(control_frame, text="Progress (1/4s)", command=progress_1_4_sec)
-    progress_1_4_button.grid(row=3, column=1, padx=5, pady=5)
-    rewind_30_button = ttk.Button(control_frame, text="Rewind (30s)", command=rewind_30s)
-    rewind_30_button.grid(row=3, column=2, padx=5, pady=5)
-    progress_30_button = ttk.Button(control_frame, text="Progress (30s)", command=progress_30s)
-    progress_30_button.grid(row=3, column=3, padx=5, pady=5)
+    ttk.Button(control_frame, text="Rewind (1/4s)", command=rewind_1_4_sec).grid(row=3, column=0, padx=5, pady=5)
+    ttk.Button(control_frame, text="Progress (1/4s)", command=progress_1_4_sec).grid(row=3, column=1, padx=5, pady=5)
+    ttk.Button(control_frame, text="Rewind (30s)", command=rewind_30s).grid(row=3, column=2, padx=5, pady=5)
+    ttk.Button(control_frame, text="Progress (30s)", command=progress_30s).grid(row=3, column=3, padx=5, pady=5)
 
     timer_label = ttk.Label(control_frame, text="00:00 / 00:00")
     timer_label.grid(row=4, column=1, padx=5, pady=5, columnspan=2)
@@ -310,8 +291,7 @@ def create_gui(files):
     else:
         root.footage_start_time = 0
 
-    now_playing_label = ttk.Label(control_frame, text=f"Now playing: {display_name}")
-    now_playing_label.grid(row=6, column=0, padx=5, pady=5, columnspan=3)
+    ttk.Label(control_frame, text=f"Now playing: {display_name}").grid(row=6, column=0, padx=5, pady=5, columnspan=3)
 
     seek_bar = ttk.Scale(control_frame, from_=0, to=100, orient="horizontal", command=on_seek)
     seek_bar.grid(row=5, column=1, padx=5, pady=5, columnspan=3, sticky="ew")
