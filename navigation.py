@@ -3,7 +3,8 @@ import re
 import threading
 import logging
 from collections import defaultdict
-from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu, Frame, Toplevel
+from tkinter import Tk, filedialog, StringVar, Label, Button, Frame, Toplevel
+from tkinter import ttk
 
 from video_player import play_videos
 
@@ -75,8 +76,7 @@ def load_camera_files():
                 if match:
                     cam_id, timestamp, date_part, time_part, _ = match.groups()
                     year, month, day = date_part[:4], date_part[4:6], date_part[6:8]
-                    file_path = full_path
-                    camera_files[year][month][day].setdefault(time_part, []).append(file_path)
+                    camera_files[year][month][day].setdefault(time_part, []).append(full_path)
                     logging.debug(f"Matched: {file} -> {year}/{month}/{day} {time_part}")
                 else:
                     logging.debug(f"Unmatched file: {file}")
@@ -91,7 +91,6 @@ def load_camera_files():
     return bool(camera_files)
 
 def display_summary():
-    logging.debug("Generating summary statistics...")
     unique_cameras = set()
     total_timestamps = 0
     total_size_gb = 0
@@ -107,7 +106,6 @@ def display_summary():
     if os.path.exists(cam1_folder):
         for file in os.listdir(cam1_folder):
             if file.lower().endswith((".mp4", ".ts")) and not os.path.isdir(os.path.join(cam1_folder, file)):
-                logging.debug(f"Tallying timestamp file: {file}")
                 total_timestamps += 1
 
     for cam_num in range(1, 11):
@@ -126,168 +124,151 @@ def display_summary():
                     total_size_gb += os.path.getsize(full_path)
 
     total_size_gb /= (1024 ** 3)
-
-    logging.info(f"Unique cameras: {len(unique_cameras)}")
-    logging.info(f"Total timestamps (CAM1): {total_timestamps}")
-    logging.info(f"Total size of footage: {total_size_gb:.2f} GB")
-
     return len(unique_cameras), total_timestamps, total_size_gb
 
 def show_navigation_ui():
     root = Tk()
     root.title("Video Navigation")
-    root.geometry("325x325")
+    root.geometry("460x360")
     root.grid_columnconfigure(0, weight=1)
     root.grid_columnconfigure(1, weight=0)
-    root.grid_columnconfigure(2, weight=0)
+    root.grid_columnconfigure(2, weight=1)
 
     if icon_path:
         try:
             root.iconbitmap(icon_path)
         except Exception as e:
             logging.warning(f"Failed to load icon: {e}")
-    else:
-        logging.debug("Icon path not set.")
 
-    year_var = StringVar(root, value="Select Year")
-    month_var = StringVar(root, value="Select Month")
-    day_var = StringVar(root, value="Select Day")
-    time_var = StringVar(root, value="Select Time")
+    year_var = StringVar()
+    month_var = StringVar()
+    day_var = StringVar()
+    time_var = StringVar()
 
-    rec_path_label_text = f"Selected Drive: {config.get('rec_path', 'No Drive Selected')}"
-    drive_path_label = Label(root, text=rec_path_label_text, wraplength=300, anchor="w")
-    drive_path_label.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="w")
+    rec_path_label = Label(root, text=f"Selected Drive: {config.get('rec_path', 'No Drive Selected')}", anchor="w", wraplength=400)
+    rec_path_label.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 5), sticky="w")
 
-    summary_label_cameras = Label(root, text="Total cameras found:\n0", anchor="w", justify="left")
-    summary_label_timestamps = Label(root, text="Total timestamp chunks:\n0", anchor="w", justify="left")
-    summary_label_size = Label(root, text="Total footage size:\n0.00 GB", anchor="w", justify="left")
+    drive_button = Button(root, text="Select Drive", command=lambda: threading.Thread(target=threaded_load).start())
+    drive_button.grid(row=1, column=0, columnspan=3, padx=10, pady=(0, 15), sticky="ew")
 
-    summary_label_cameras.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="w")
-    summary_label_timestamps.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky="w")
-    summary_label_size.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+    # Left-side stats
+    stats = {
+        "cameras": Label(root, text="Total cameras found:\n0", anchor="w", justify="left"),
+        "timestamps": Label(root, text="Total timestamps:\n0", anchor="w", justify="left"),
+        "footage": Label(root, text="Total footage:\n0.00 GB", anchor="w", justify="left")
+    }
+
+    for i, key in enumerate(stats):
+        stats[key].grid(row=i + 2, column=0, padx=10, pady=2, sticky="w")
+
+    # Dropdown labels and boxes in Frames for tight layout
+    dropdowns = []
+    labels = ["Year", "Month", "Day", "Time"]
+    vars_ = [year_var, month_var, day_var, time_var]
+
+    for i, label in enumerate(labels):
+        frame = Frame(root)
+        frame.grid(row=i + 2, column=2, sticky="e", padx=(0, 10), pady=2)
+        lbl = Label(frame, text=f"{label}:", anchor="e")
+        lbl.pack(side="left", padx=(0, 4))
+        cb = ttk.Combobox(frame, textvariable=vars_[i], state="readonly", width=14)
+        cb.pack(side="left")
+        dropdowns.append(cb)
 
     def update_summary():
-        unique_cameras, total_timestamps, total_size_gb = display_summary()
-        summary_label_cameras.config(text=f"Total cameras found:\n{unique_cameras}")
-        summary_label_timestamps.config(text=f"Total timestamp chunks:\n{total_timestamps}")
-        summary_label_size.config(text=f"Total footage size:\n{total_size_gb:.2f} GB")
+        c, t, g = display_summary()
+        stats["cameras"].config(text=f"Total cameras found:\n{c}")
+        stats["timestamps"].config(text=f"Total timestamps:\n{t}")
+        stats["footage"].config(text=f"Total footage:\n{g:.2f} GB")
 
     def update_years():
-        year_menu['menu'].delete(0, 'end')
         years = sorted(camera_files.keys())
-        for year in years:
-            year_menu['menu'].add_command(label=year, command=lambda value=year: year_var.set(value))
-        update_months()
+        dropdowns[0]['values'] = years
+        if years:
+            year_var.set(years[0])
+            update_months()
 
     def update_months(*args):
-        month_menu['menu'].delete(0, 'end')
-        selected_year = year_var.get()
-        if selected_year in camera_files:
-            months = sorted(camera_files[selected_year].keys())
-            for month in months:
-                month_menu['menu'].add_command(label=month, command=lambda value=month: month_var.set(value))
-        update_days()
+        y = year_var.get()
+        months = sorted(camera_files.get(y, {}).keys())
+        dropdowns[1]['values'] = months
+        if months:
+            month_var.set(months[0])
+            update_days()
 
     def update_days(*args):
-        day_menu['menu'].delete(0, 'end')
-        selected_year = year_var.get()
-        selected_month = month_var.get()
-        if selected_year in camera_files and selected_month in camera_files[selected_year]:
-            days = sorted(camera_files[selected_year][selected_month].keys())
-            for day in days:
-                day_menu['menu'].add_command(label=day, command=lambda value=day: day_var.set(value))
-        update_times()
+        y, m = year_var.get(), month_var.get()
+        days = sorted(camera_files.get(y, {}).get(m, {}).keys())
+        dropdowns[2]['values'] = days
+        if days:
+            day_var.set(days[0])
+            update_times()
 
     def update_times(*args):
-        time_menu['menu'].delete(0, 'end')
-        selected_year = year_var.get()
-        selected_month = month_var.get()
-        selected_day = day_var.get()
+        y, m, d = year_var.get(), month_var.get(), day_var.get()
+        raw_to_formatted = {}
+        formatted_times = []
 
-        if selected_year in camera_files and selected_month in camera_files[selected_year] and selected_day in camera_files[selected_year][selected_month]:
-            times = sorted(camera_files[selected_year][selected_month][selected_day].keys())
-            for raw_time in times:
-                if len(raw_time) == 6:
-                    formatted_time = f"{raw_time[0:2]}:{raw_time[2:4]}:{raw_time[4:6]}"
-                elif len(raw_time) == 4:
-                    formatted_time = f"{raw_time[0:2]}:{raw_time[2:4]}:00"
-                else:
-                    formatted_time = "00:00:00"
-                def callback(rt=raw_time, ft=formatted_time):
-                    time_var.set(ft)
-                    setattr(time_var, 'raw_time', rt)
-                time_menu['menu'].add_command(label=formatted_time, command=callback)
+        times = sorted(camera_files.get(y, {}).get(m, {}).get(d, {}).keys())
+        for raw in times:
+            if len(raw) == 6:
+                formatted = f"{raw[:2]}:{raw[2:4]}:{raw[4:]}"
+            elif len(raw) == 4:
+                formatted = f"{raw[:2]}:{raw[2:]}:00"
+            else:
+                formatted = "00:00:00"
+            raw_to_formatted[formatted] = raw
+            formatted_times.append(formatted)
 
-    year_var.trace("w", update_months)
-    month_var.trace("w", update_days)
-    day_var.trace("w", update_times)
+        dropdowns[3]['values'] = formatted_times
+        if formatted_times:
+            time_var.set(formatted_times[0])
+            setattr(time_var, "raw_time", raw_to_formatted[formatted_times[0]])
 
-    Label(root, text="Year:").grid(row=2, column=1, sticky="e")
-    year_menu = OptionMenu(root, year_var, "Select Year")
-    year_menu.grid(row=2, column=2, padx=(5, 10), pady=2, sticky="e")
-    year_menu.config(width=10)
+        def on_select(event):
+            selected = time_var.get()
+            raw = raw_to_formatted.get(selected)
+            if raw:
+                setattr(time_var, "raw_time", raw)
 
-    Label(root, text="Month:").grid(row=3, column=1, sticky="e")
-    month_menu = OptionMenu(root, month_var, "Select Month")
-    month_menu.grid(row=3, column=2, padx=(5, 10), pady=2, sticky="e")
-    month_menu.config(width=10)
+        dropdowns[3].bind("<<ComboboxSelected>>", on_select)
 
-    Label(root, text="Day:").grid(row=4, column=1, sticky="e")
-    day_menu = OptionMenu(root, day_var, "Select Day")
-    day_menu.grid(row=4, column=2, padx=(5, 10), pady=2, sticky="e")
-    day_menu.config(width=10)
-
-    Label(root, text="Time:").grid(row=5, column=1, sticky="e")
-    time_menu = OptionMenu(root, time_var, "Select Time")
-    time_menu.grid(row=5, column=2, padx=(5, 10), pady=2, sticky="e")
-    time_menu.config(width=10)
+    dropdowns[0].bind("<<ComboboxSelected>>", update_months)
+    dropdowns[1].bind("<<ComboboxSelected>>", update_days)
+    dropdowns[2].bind("<<ComboboxSelected>>", update_times)
 
     def threaded_load():
-        loading_popup = Toplevel(root)
-        loading_popup.title("Loading...")
-        Label(loading_popup, text="Scanning drive, please wait...").pack(padx=20, pady=20)
-
+        loading = Toplevel(root)
+        Label(loading, text="Scanning drive, please wait...").pack(padx=20, pady=20)
         root.update_idletasks()
-        root_x = root.winfo_x()
-        root_y = root.winfo_y()
-        root_w = root.winfo_width()
-        root_h = root.winfo_height()
+        x, y = root.winfo_x(), root.winfo_y()
+        w, h = root.winfo_width(), root.winfo_height()
+        loading.geometry(f"250x80+{x + w//2 - 125}+{y + h//2 - 40}")
+        loading.transient(root)
+        loading.grab_set()
+        loading.update()
 
-        popup_w = 250
-        popup_h = 80
-        pos_x = root_x + (root_w // 2) - (popup_w // 2)
-        pos_y = root_y + (root_h // 2) - (popup_h // 2)
-
-        loading_popup.geometry(f"{popup_w}x{popup_h}+{pos_x}+{pos_y}")
-        loading_popup.transient(root)
-        loading_popup.grab_set()
-        loading_popup.update()
-
-        def background():
+        def bg():
             if load_camera_files():
-                drive_path_label.config(text=f"Selected Drive: {config['rec_path']}")
+                rec_path_label.config(text=f"Selected Drive: {config['rec_path']}")
                 update_years()
                 update_summary()
-            loading_popup.destroy()
+            loading.destroy()
 
-        threading.Thread(target=background).start()
-
-    drive_button = Button(root, text="Select Drive", command=threaded_load)
-    drive_button.grid(row=1, column=0, columnspan=3, padx=40, pady=10, sticky="ew")
+        threading.Thread(target=bg).start()
 
     def play_selected_videos():
-        vlc_path = setup_vlc_path()
-        selected_year = year_var.get()
-        selected_month = month_var.get()
-        selected_day = day_var.get()
-        selected_time = getattr(time_var, "raw_time", None)
-        if selected_year and selected_month and selected_day and selected_time:
+        vlc = setup_vlc_path()
+        y, m, d = year_var.get(), month_var.get(), day_var.get()
+        t = getattr(time_var, "raw_time", None)
+        if y and m and d and t:
             try:
-                play_videos(vlc_path, camera_files[selected_year][selected_month][selected_day][selected_time])
+                play_videos(vlc, camera_files[y][m][d][t])
             except KeyError:
                 logging.error("Selected time not found.")
 
-    play_button = Button(root, text="Play Selected", command=play_selected_videos)
-    play_button.grid(row=6, column=0, columnspan=3, padx=40, pady=10, sticky="ew")
+    Button(root, text="Play Selected", command=play_selected_videos).grid(
+        row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
+    )
 
     root.mainloop()
