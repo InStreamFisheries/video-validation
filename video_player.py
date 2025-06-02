@@ -9,6 +9,13 @@ import time
 import atexit
 import sys
 
+# use bundled VLC .dlls/plugins if frozen via pyinstaller
+if getattr(sys, 'frozen', False):
+    bundle_dir = sys._MEIPASS
+    os.environ["PATH"] = f"{bundle_dir};{os.environ['PATH']}"
+    os.environ["VLC_PLUGIN_PATH"] = os.path.join(bundle_dir, "plugins")
+    logging.debug(f"PyInstaller detected. Using bundled VLC at: {bundle_dir}")
+
 # setup logging
 logging.basicConfig(
     level=logging.DEBUG,
