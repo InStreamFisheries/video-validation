@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import shutil
 
@@ -30,7 +31,9 @@ def build_app(version):
     app_name_with_version = f"{app_name} {version}"
 
     command = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--onefile",
         "--noconsole",
         f"--name={app_name_with_version}",
@@ -39,7 +42,8 @@ def build_app(version):
     ]
 
     if icon_path:
-        command.extend([f"--icon={icon_path}", f"--add-data={icon_path};."])
+        icon_full = os.path.abspath(icon_path)
+        command.extend([f"--icon={icon_full}", f"--add-data={icon_full};."])
 
     print(f"Running: {' '.join(command)}")
     result = subprocess.run(command)
