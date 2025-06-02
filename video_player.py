@@ -6,6 +6,7 @@ from tkinter import ttk, Label
 import threading
 import logging
 import time
+import atexit
 
 # setup logging
 logging.basicConfig(
@@ -23,6 +24,18 @@ players = []
 frames = []
 updating_seek_bar = False
 icon_path = None
+shutdown_called = False
+
+def cleanup_players():
+    logging.debug("Cleanup: Stopping all VLC players")
+    for idx, player in enumerate(players):
+        try:
+            player.stop()
+            logging.debug(f"Player {idx+1} forcibly stopped during cleanup.")
+        except Exception as e:
+            logging.error(f"Error during cleanup for player {idx+1}: {e}")
+
+atexit.register(cleanup_players)
 
 def update_seek_bar():
     global updating_seek_bar
@@ -34,7 +47,6 @@ def update_seek_bar():
             updating_seek_bar = True
             seek_bar.set((current_time_ms / duration_ms) * 100)
             updating_seek_bar = False
-
             logging.debug(f"SeekBar updated: {current_time_ms} / {duration_ms} ms")
 
     root.after(250, update_seek_bar)
@@ -113,6 +125,7 @@ def stop():
         except Exception as e:
             logging.error(f"Error stopping player {idx+1}: {e}")
     if root:
+        root.quit()
         root.destroy()
         logging.debug("GUI closed")
 
@@ -168,13 +181,24 @@ def update_timer():
     root.after(1000, update_timer)
 
 def on_closing():
+    global shutdown_called
+    if shutdown_called:
+        return
+    shutdown_called = True
     logging.debug("Window close event triggered")
-    for player in players:
-        player.stop()
-    if root:
-        root.destroy()
+    cleanup_players()
+
+    try:
         root.quit()
-        logging.debug("App exited cleanly")
+        logging.debug("Called root.quit()")
+    except Exception as e:
+        logging.error(f"Error in root.quit(): {e}")
+
+    try:
+        root.destroy()
+        logging.debug("Called root.destroy()")
+    except Exception as e:
+        logging.error(f"Error in root.destroy(): {e}")
 
 def on_key_press(event):
     if event.keysym == "Return":
