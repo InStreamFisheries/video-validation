@@ -129,7 +129,7 @@ def display_summary():
 def show_navigation_ui():
     root = Tk()
     root.title("Video Navigation")
-    root.geometry("460x360")
+    root.geometry("300x300")
     root.grid_columnconfigure(0, weight=1)
     root.grid_columnconfigure(1, weight=0)
     root.grid_columnconfigure(2, weight=1)
@@ -151,7 +151,6 @@ def show_navigation_ui():
     drive_button = Button(root, text="Select Drive", command=lambda: threading.Thread(target=threaded_load).start())
     drive_button.grid(row=1, column=0, columnspan=3, padx=10, pady=(0, 15), sticky="ew")
 
-    # Left-side stats
     stats = {
         "cameras": Label(root, text="Total cameras found:\n0", anchor="w", justify="left"),
         "timestamps": Label(root, text="Total timestamps:\n0", anchor="w", justify="left"),
@@ -161,7 +160,6 @@ def show_navigation_ui():
     for i, key in enumerate(stats):
         stats[key].grid(row=i + 2, column=0, padx=10, pady=2, sticky="w")
 
-    # Dropdown labels and boxes in Frames for tight layout
     dropdowns = []
     labels = ["Year", "Month", "Day", "Time"]
     vars_ = [year_var, month_var, day_var, time_var]
