@@ -77,7 +77,6 @@ def load_camera_files():
                     cam_id, timestamp, date_part, time_part, _ = match.groups()
                     year, month, day = date_part[:4], date_part[4:6], date_part[6:8]
                     camera_files[year][month][day].setdefault(time_part, []).append(full_path)
-                    logging.debug(f"Matched: {file} -> {year}/{month}/{day} {time_part}")
                 else:
                     logging.debug(f"Unmatched file: {file}")
         else:

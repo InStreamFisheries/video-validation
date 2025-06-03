@@ -1,20 +1,12 @@
 import vlc
 import os
-import re
 import tkinter as tk
-from tkinter import ttk, Label
+from tkinter import ttk
 import threading
 import logging
 import time
 import atexit
 import sys
-
-# use bundled VLC .dlls/plugins if frozen via pyinstaller
-if getattr(sys, 'frozen', False):
-    bundle_dir = sys._MEIPASS
-    os.environ["PATH"] = f"{bundle_dir};{os.environ['PATH']}"
-    os.environ["VLC_PLUGIN_PATH"] = os.path.join(bundle_dir, "plugins")
-    logging.debug(f"PyInstaller detected. Using bundled VLC at: {bundle_dir}")
 
 # setup logging
 logging.basicConfig(
@@ -28,13 +20,24 @@ logging.basicConfig(
 
 logging.debug("video_player.py initialized.")
 
+if getattr(sys, 'frozen', False):
+    bundle_dir = sys._MEIPASS
+    os.environ["PATH"] = f"{bundle_dir};{os.environ['PATH']}"
+    os.environ["VLC_PLUGIN_PATH"] = os.path.join(bundle_dir, "plugins")
+    logging.debug(f"PyInstaller detected. Using bundled VLC at: {bundle_dir}")
+
 players = []
 frames = []
-updating_seek_bar = False
 icon_path = None
 shutdown_called = False
 last_files = []
 last_known_rate = 1.0
+
+pause_lock = threading.Lock()
+pause_event = threading.Event()
+pause_event.set()
+
+sync_status_label = None
 
 def cleanup_players():
     logging.debug("Cleanup: Stopping all VLC players")
@@ -47,100 +50,53 @@ def cleanup_players():
 
 atexit.register(cleanup_players)
 
-def update_seek_bar():
-    global updating_seek_bar
-    if not hasattr(root, 'winfo_exists') or not root.winfo_exists():
-        return
-    if players and seek_bar:
-        current_time_ms = players[0].get_time()
-        duration_ms = players[0].get_length()
-        try:
-            rate = players[0].get_rate()
-        except:
-            rate = 1.0
-
-        if duration_ms > 0 and rate <= 2.0:
-            updating_seek_bar = True
-            seek_bar.set((current_time_ms / duration_ms) * 100)
-            updating_seek_bar = False
-            logging.debug(f"SeekBar updated: {current_time_ms} / {duration_ms} ms")
-
-    root.after(250, update_seek_bar)
-
-def on_seek(value):
-    global updating_seek_bar
-    if not updating_seek_bar and players:
-        duration_ms = players[0].get_length()
-        if duration_ms > 0:
-            seek_time_ms = int((float(value) / 100) * duration_ms)
-            for idx, player in enumerate(players):
-                try:
-                    player.set_time(seek_time_ms)
-                    logging.debug(f"Player {idx+1} seeked to {seek_time_ms} ms")
-                except Exception as e:
-                    logging.error(f"Seek error on player {idx+1}: {e}")
-
-def initialize_players(files):
-    global players
-    logging.debug("Initializing VLC instances...")
-
-    options = [
-        "--file-caching=1000",
-        "--network-caching=1000",
-        "--avcodec-hw=none",
-        "--no-video-title-show",
-        "--quiet"
-    ]
-    instances = [vlc.Instance(*options) for _ in files]
-    players = []
-
-    for idx, (instance, file) in enumerate(zip(instances, files)):
-        logging.debug(f"Setting up player {idx+1} for: {file}")
-        player = instance.media_player_new()
-        media = instance.media_new(file)
-        player.set_media(media)
-        frame = frames[idx]
-        player.set_hwnd(frame.winfo_id())
-        players.append(player)
-
-    logging.debug("Pre-buffering players for sync...")
-
-    # start all players first to begin buffering
-    for idx, player in enumerate(players):
-        try:
-            player.play()
-            logging.debug(f"Player {idx+1} play() called for pre-buffering.")
-        except Exception as e:
-            logging.error(f"Error during pre-buffer play for player {idx+1}: {e}")
-
-    time.sleep(2.0)
-
-    for idx, player in enumerate(players):
-        try:
-            player.pause()
-            logging.debug(f"Player {idx+1} paused after pre-buffer.")
-        except Exception as e:
-            logging.error(f"Error pausing player {idx+1} after buffer: {e}")
-
-def start_playback():
-    for idx, player in enumerate(players):
-        try:
-            player.play()
-            logging.debug(f"Started playback for player {idx+1}")
-        except Exception as e:
-            logging.error(f"Error starting playback for player {idx+1}: {e}")
-
-def toggle_play_pause():
-    for idx, player in enumerate(players):
-        try:
-            if player.is_playing():
+def pause_all_players():
+    with pause_lock:
+        pause_event.clear()
+        for idx, player in enumerate(players):
+            try:
                 player.pause()
                 logging.debug(f"Player {idx+1} paused")
-            else:
+            except Exception as e:
+                logging.error(f"Pause error on player {idx+1}: {e}")
+
+def play_all_players():
+    with pause_lock:
+        for idx, player in enumerate(players):
+            try:
                 player.play()
                 logging.debug(f"Player {idx+1} resumed")
-        except Exception as e:
-            logging.error(f"Toggle play/pause error on player {idx+1}: {e}")
+            except Exception as e:
+                logging.error(f"Play error on player {idx+1}: {e}")
+        pause_event.set()
+
+def jump_to_time():
+    time_str = jump_entry.get()
+    try:
+        minutes, seconds = map(int, time_str.split(':'))
+        jump_ms = (minutes * 60 + seconds) * 1000
+        logging.debug(f"Jumping to {jump_ms} ms")
+        pause_all_players()
+        time.sleep(0.8)
+        for idx, player in enumerate(players):
+            player.set_time(jump_ms)
+            logging.debug(f"Player {idx+1} jumped to {jump_ms} ms")
+        time.sleep(1.2)
+        pause_all_players()  # ensure players stay paused after jump
+        logging.debug("All players paused after jump")
+        if sync_status_label:
+            sync_status_label.config(text="Synced to time: {:02}:{:02}".format(minutes, seconds), foreground="green")
+    except Exception as e:
+        logging.error(f"Invalid jump time input '{time_str}': {e}")
+        if sync_status_label:
+            sync_status_label.config(text="Invalid time format", foreground="red")
+
+def toggle_play_pause():
+    playing = any(player.is_playing() for player in players)
+    if playing:
+        pause_all_players()
+    else:
+        play_all_players()
 
 def stop():
     for idx, player in enumerate(players):
@@ -239,7 +195,7 @@ def on_key_press(event):
         logging.debug(f"Fullscreen toggled: now {'on' if not is_fullscreen else 'off'}")
 
 def create_gui(files):
-    global root, frames, now_playing_label, timer_label, seek_bar, overlay_label, last_files
+    global root, frames, jump_entry, timer_label, overlay_label, last_files, sync_status_label
     last_files = files[:]
     root = tk.Tk()
     logging.debug("Tkinter root window created.")
@@ -261,17 +217,8 @@ def create_gui(files):
     root.lift()
     root.focus_force()
 
-    if icon_path:
-        try:
-            root.iconbitmap(icon_path)
-            logging.debug("Icon loaded successfully")
-        except Exception as e:
-            logging.warning(f"Failed to load icon: {e}")
-    else:
-        logging.info("Icon path not set")
-
     num_videos = len(files)
-    cols = int(num_videos**0.5 + 0.5)
+    cols = int(num_videos ** 0.5 + 0.5)
     rows = (num_videos + cols - 1) // cols
     logging.debug(f"Layout: {rows} rows x {cols} cols for {num_videos} video(s)")
 
@@ -287,7 +234,7 @@ def create_gui(files):
     frames = []
     for idx in range(num_videos):
         row, col = divmod(idx, cols)
-        frame = tk.Frame(root, width=screen_width//cols, height=video_height)
+        frame = tk.Frame(root, width=screen_width // cols, height=video_height)
         frame.grid(row=row, column=col, sticky="nsew")
         frame.grid_propagate(False)
         frames.append(frame)
@@ -309,8 +256,16 @@ def create_gui(files):
     ttk.Button(control_frame, text="Rewind (30s)", command=rewind_30s).grid(row=3, column=2, padx=5, pady=5)
     ttk.Button(control_frame, text="Progress (30s)", command=progress_30s).grid(row=3, column=3, padx=5, pady=5)
 
+    ttk.Label(control_frame, text="Jump to (MM:SS):").grid(row=4, column=0, padx=5, pady=5)
+    jump_entry = ttk.Entry(control_frame, width=8)
+    jump_entry.grid(row=4, column=1, padx=5, pady=5)
+    ttk.Button(control_frame, text="Go", command=jump_to_time).grid(row=4, column=2, padx=5, pady=5)
+
+    sync_status_label = ttk.Label(control_frame, text="", font=("TkDefaultFont", 9, "bold"))
+    sync_status_label.grid(row=4, column=3, padx=10, pady=5, sticky="w")
+
     timer_label = ttk.Label(control_frame, text="00:00 / 00:00")
-    timer_label.grid(row=4, column=1, padx=5, pady=5, columnspan=2)
+    timer_label.grid(row=5, column=1, padx=5, pady=5, columnspan=2)
 
     filename = os.path.basename(files[0])
     display_name = filename[5:] if filename.startswith("CAM") else filename
@@ -329,17 +284,35 @@ def create_gui(files):
         root.footage_start_time = 0
 
     ttk.Label(control_frame, text=f"Now playing: {display_name}").grid(row=6, column=0, padx=5, pady=5, columnspan=3)
-
-    seek_bar = ttk.Scale(control_frame, from_=0, to=100, orient="horizontal", command=on_seek)
-    seek_bar.grid(row=5, column=1, padx=5, pady=5, columnspan=3, sticky="ew")
-
     overlay_label = ttk.Label(control_frame, text="Footage Time: --:--:--", font=("TkDefaultFont", 10, "bold"))
     overlay_label.grid(row=7, column=0, padx=5, pady=5, columnspan=3, sticky="ew")
 
     update_timer()
-    update_seek_bar()
     logging.debug("GUI setup complete. Entering main loop.")
     root.mainloop()
+
+def initialize_players(files):
+    options = [
+        "--file-caching=1000",
+        "--network-caching=1000",
+        "--avcodec-hw=none",
+        "--no-video-title-show",
+        "--quiet"
+    ]
+    instances = [vlc.Instance(*options) for _ in files]
+    for idx, (instance, file) in enumerate(zip(instances, files)):
+        logging.debug(f"Setting up player {idx+1} for: {file}")
+        player = instance.media_player_new()
+        media = instance.media_new(file)
+        player.set_media(media)
+        player.set_hwnd(frames[idx].winfo_id())
+        players.append(player)
+        player.play()
+        logging.debug(f"Player {idx+1} started for pre-buffering")
+    time.sleep(2.0)
+    for idx, player in enumerate(players):
+        player.pause()
+        logging.debug(f"Player {idx+1} paused after pre-buffer")
 
 def play_videos(vlc_path, files):
     logging.debug(f"Launching video playback with VLC path: {vlc_path}")
