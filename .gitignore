@@ -3,6 +3,9 @@
 /build/
 /releases/
 
+#vlc
+/vlc_bundle/
+
 # Ignore spec files
 /specs/
 
