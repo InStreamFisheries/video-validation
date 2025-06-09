@@ -1,51 +1,74 @@
 import os
-import sys
 import subprocess
 import shutil
 
 app_name = "Video Validation"
-icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
+source_script = "main.py"
+default_icon = os.path.join(os.path.dirname(__file__), "appIcon.ico")
+
+embedded_files = [
+    "version.txt"
+]
 
 def validate_icon_path():
-    global icon_path
-    if not os.path.exists(icon_path):
-        print(f"Warning: Default icon file '{icon_path}' not found.")
-        user_icon_path = input("Enter the path to the icon file (.ico), or press Enter to skip: ").strip()
+    global default_icon
+    if not os.path.exists(default_icon):
+        print(f"Warning: Default icon file '{default_icon}' not found.")
+        user_icon_path = input("Enter path to icon file (.ico), or press Enter to skip: ").strip()
         if user_icon_path and os.path.exists(user_icon_path):
-            icon_path = user_icon_path
+            default_icon = user_icon_path
         else:
             print("No valid icon provided. The build will proceed without an icon.")
-            icon_path = None
+            default_icon = None
 
 def get_version():
+    previous_version = "unknown"
+    version_file = "version.txt"
+    if os.path.exists(version_file):
+        with open(version_file, "r") as f:
+            previous_version = f.read().strip()
+
     while True:
-        version = input("Enter the version number (e.g., 1.0.0): ").strip()
-        confirm = input(f"Confirm version '{version}'? (y/n): ").lower()
+        version = input(f"Enter the version number (prev. app version: {previous_version}): ").strip()
+        confirm = input(f"Confirm version '{version}'? (y/n): ").strip().lower()
         if confirm == 'y':
             return version
 
 def build_app(version):
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    output_dir = f"./releases/{version}"
-    os.makedirs(output_dir, exist_ok=True)
-    app_name_with_version = f"{app_name} {version}"
+
+    app_folder_name = app_name
+    release_dir = os.path.join("releases", app_folder_name, version)
+    build_dir = os.path.join("build", app_folder_name, version)
+    spec_dir = os.path.join("specs", app_folder_name, version)
+
+    os.makedirs(release_dir, exist_ok=True)
+    os.makedirs(build_dir, exist_ok=True)
+    os.makedirs(spec_dir, exist_ok=True)
+
+    exe_name = f"{app_name} {version}"
 
     command = [
-        sys.executable,
-        "-m",
-        "PyInstaller",
+        "pyinstaller",
+        "--noconfirm",
         "--onefile",
         "--noconsole",
-        f"--name={app_name_with_version}",
-        f"--distpath={output_dir}",
-        "main.py",
+        f"--name={exe_name}",
+        f"--distpath={release_dir}",
+        f"--workpath={build_dir}",
+        f"--specpath={spec_dir}",
+        source_script,
     ]
 
-    if icon_path:
-        icon_full = os.path.abspath(icon_path)
-        command.extend([f"--icon={icon_full}", f"--add-data={icon_full};."])
 
-    # add VLC .dlls and plugins from ./vlc_bundle/
+    for file in embedded_files:
+        file_path = os.path.join(os.getcwd(), file)
+        if os.path.exists(file_path):
+            if file == "version.txt":
+                command.append(f"--add-data={file_path};version.txt")
+            else:
+                command.append(f"--add-data={file_path};.")
+
     vlc_dir = os.path.abspath("vlc_bundle")
     if os.path.exists(vlc_dir):
         dll1 = os.path.join(vlc_dir, "libvlc.dll")
@@ -59,35 +82,33 @@ def build_app(version):
         if os.path.exists(plugins_dir):
             command.append(f"--add-data={plugins_dir};plugins")
 
-    print(f"Running: {' '.join(command)}")
+    if default_icon:
+        command.append(f"--icon={default_icon}")
+
+    print("\n[BUILD COMMAND]")
+    print(" ".join(command))
     result = subprocess.run(command)
 
-    # Move the .spec file to the 'specs' folder
-    spec_folder = "./specs"
-    os.makedirs(spec_folder, exist_ok=True)
-    spec_file = f"{app_name_with_version}.spec"
-    spec_file_path = os.path.join(os.getcwd(), spec_file)
-    if os.path.exists(spec_file_path):
-        shutil.move(spec_file_path, os.path.join(spec_folder, spec_file))
-        print(f"Moved .spec file to {spec_folder}")
-
     if result.returncode == 0:
-        print(f"Build completed successfully. Files are in {output_dir}")
+        print(f"\nBuild complete. Output in: {release_dir}")
     else:
-        print("Build failed. Check the output for details.")
+        print("\nBuild failed. See the output above for errors.")
 
 def copy_files(version, files_to_copy):
-    output_dir = f"./releases/{version}"
+    release_dir = os.path.join("releases", app_name, version)
     for file in files_to_copy:
         if os.path.exists(file):
-            shutil.copy(file, output_dir)
-            print(f"Copied {file} to {output_dir}")
+            shutil.copy(file, release_dir)
+            print(f"Copied {file} → {release_dir}")
 
 if __name__ == "__main__":
     validate_icon_path()
     version = get_version()
 
-    print(f"\nBuilding version {version} for '{app_name} {version}'...")
+    with open("version.txt", "w") as f:
+        f.write(version)
+
+    print(f"\nBuilding '{app_name}' version {version}...\n")
     build_app(version)
 
     additional_files = ["README.md", "LICENSE"]
