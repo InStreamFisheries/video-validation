@@ -244,6 +244,40 @@ def create_gui(files):
 
     initialize_players(files)
 
+    overlay_frames = []
+
+    for idx, frame in enumerate(frames):
+        frame.update_idletasks()
+        x = frame.winfo_rootx() - root.winfo_rootx()
+        y = frame.winfo_rooty() - root.winfo_rooty()
+        w = frame.winfo_width()
+        h = frame.winfo_height()
+
+        # black box 40% width, 15% height in bottom right corner
+        box_width = int(w * 0.40)
+        box_height = int(h * 0.10)
+        box_x = x + w - box_width - 10
+        box_y = y + h - box_height - 10
+
+        overlay = tk.Frame(root, bg="black")
+        overlay.place(x=box_x, y=box_y, width=box_width, height=box_height)
+
+        overlay_frames.append(overlay)
+
+        def on_resize(event, overlay=overlay, frame=frame):
+            frame.update_idletasks()
+            x = frame.winfo_rootx() - root.winfo_rootx()
+            y = frame.winfo_rooty() - root.winfo_rooty()
+            w = frame.winfo_width()
+            h = frame.winfo_height()
+            box_width = int(w * 0.40)
+            box_height = int(h * 0.10)
+            box_x = x + w - box_width - 10
+            box_y = y + h - box_height - 10
+            overlay.place(x=box_x, y=box_y, width=box_width, height=box_height)
+
+        frame.bind("<Configure>", on_resize)
+
     ttk.Button(control_frame, text="Play/Pause", command=toggle_play_pause).grid(row=0, column=1, padx=5, pady=5)
     ttk.Button(control_frame, text="Stop", command=stop).grid(row=0, column=2, padx=5, pady=5)
 
