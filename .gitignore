@@ -6,6 +6,9 @@
 #vlc
 /vlc_bundle/
 
+.vscode/
+video-validation.code-workspace
+
 # Ignore spec files
 /specs/
 
