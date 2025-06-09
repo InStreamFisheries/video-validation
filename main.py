@@ -2,6 +2,7 @@ import os
 import navigation
 import video_player
 
+
 def setup_icon_path():
     icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
     if not os.path.exists(icon_path):

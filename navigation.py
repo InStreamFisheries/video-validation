@@ -3,8 +3,8 @@ import re
 import threading
 import logging
 from collections import defaultdict
-from tkinter import Tk, filedialog, StringVar, Label, Button, Frame, Toplevel
-from tkinter import ttk
+from tkinter import Tk, filedialog, StringVar, Label, Button, Frame, Toplevel, messagebox, ttk
+import json
 
 from video_player import play_videos
 
@@ -25,6 +25,28 @@ config = {
     "vlc_path": None,
     "rec_path": None,
 }
+
+VIEWED_FILE = "viewed_files.json"
+viewed_times = set()
+
+def load_viewed_times():
+    global viewed_times
+    if os.path.exists(VIEWED_FILE):
+        try:
+            with open(VIEWED_FILE, "r") as f:
+                data = json.load(f)
+                viewed_times = set(data.keys())
+                logging.info(f"Loaded {len(viewed_times)} viewed times.")
+        except Exception as e:
+            logging.error(f"Error loading viewed times: {e}")
+
+def save_viewed_times():
+    try:
+        with open(VIEWED_FILE, "w") as f:
+            json.dump({k: True for k in viewed_times}, f, indent=2)
+            logging.info(f"Saved {len(viewed_times)} viewed times.")
+    except Exception as e:
+        logging.error(f"Error saving viewed times: {e}")
 
 def setup_vlc_path():
     if config["vlc_path"]:
@@ -127,8 +149,9 @@ def display_summary():
 
 def show_navigation_ui():
     root = Tk()
+    load_viewed_times()
     root.title("Video Navigation")
-    root.geometry("300x300")
+    root.geometry("300x330")
     root.grid_columnconfigure(0, weight=1)
     root.grid_columnconfigure(1, weight=0)
     root.grid_columnconfigure(2, weight=1)
@@ -214,8 +237,16 @@ def show_navigation_ui():
                 formatted = f"{raw[:2]}:{raw[2:]}:00"
             else:
                 formatted = "00:00:00"
-            raw_to_formatted[formatted] = raw
-            formatted_times.append(formatted)
+
+            viewed_key = f"{y}/{m}/{d}/{raw}"
+            if viewed_key in viewed_times:
+                display_text = f"✔️ {formatted}"
+            else:
+                display_text = f"   {formatted}"
+
+            raw_to_formatted[display_text] = raw
+            formatted_times.append(display_text)
+
 
         dropdowns[3]['values'] = formatted_times
         if formatted_times:
@@ -254,6 +285,15 @@ def show_navigation_ui():
 
         threading.Thread(target=bg).start()
 
+    def clear_viewed_times():
+        confirm = messagebox.askyesno("Confirm Clear", "Are you sure you want to clear all viewed times?")
+        if confirm:
+            viewed_times.clear()
+            save_viewed_times()
+            update_times()
+            logging.info("Viewed times cleared.")
+
+
     def play_selected_videos():
         vlc = setup_vlc_path()
         y, m, d = year_var.get(), month_var.get(), day_var.get()
@@ -261,11 +301,20 @@ def show_navigation_ui():
         if y and m and d and t:
             try:
                 play_videos(vlc, camera_files[y][m][d][t])
+            
+                viewed_key = f"{y}/{m}/{d}/{t}"
+                viewed_times.add(viewed_key)
+                save_viewed_times()
+
+                update_times()  
+
             except KeyError:
                 logging.error("Selected time not found.")
 
     Button(root, text="Play Selected", command=play_selected_videos).grid(
-        row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
-    )
-
+    row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
+)
+    Button(root, text="Clear Viewed Times", command=clear_viewed_times).grid(
+    row=7, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="ew"
+)
     root.mainloop()
