@@ -242,7 +242,7 @@ def create_gui(files):
     control_frame = tk.Frame(root)
     control_frame.grid(row=rows, column=0, columnspan=cols, sticky="nsew")
 
-    initialize_players(files)
+    root.after(100, lambda: initialize_players(files))
 
     overlay_frames = []
 
