@@ -1,15 +1,27 @@
 import os
+import logging
 import navigation
 import video_player
 
+logging.basicConfig(
+    level=logging.DEBUG,  # change this to INFO to reduce noise
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        # hiding logging for now, uncomment to enable file logging
+        # logging.FileHandler("app_debug.log", mode='w'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
+logger.debug("main.py initialized.")
 
 def setup_icon_path():
     icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
     if not os.path.exists(icon_path):
-        print(f"Warning: Icon file not found at {icon_path}. Using default system icons.")
-        icon_path = None  # fallback to default system icon
+        logger.warning(f"Icon file not found at {icon_path}. Using default system icons.")
+        icon_path = None
 
-    # assigning icon to other files, refactoring def
     navigation.icon_path = icon_path
     video_player.icon_path = icon_path
 

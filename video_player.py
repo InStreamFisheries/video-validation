@@ -8,23 +8,14 @@ import time
 import atexit
 import sys
 
-# setup logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        #logging.FileHandler("app_debug.log", mode='a'), disabled for now
-        logging.StreamHandler()
-    ]
-)
-
-logging.debug("video_player.py initialized.")
+logger = logging.getLogger(__name__)
+logger.debug("video_player.py initialized.")
 
 if getattr(sys, 'frozen', False):
     bundle_dir = sys._MEIPASS
     os.environ["PATH"] = f"{bundle_dir};{os.environ['PATH']}"
     os.environ["VLC_PLUGIN_PATH"] = os.path.join(bundle_dir, "plugins")
-    logging.debug(f"PyInstaller detected. Using bundled VLC at: {bundle_dir}")
+    logger.debug(f"PyInstaller detected. Using bundled VLC at: {bundle_dir}")
 
 players = []
 frames = []
@@ -40,13 +31,13 @@ pause_event.set()
 sync_status_label = None
 
 def cleanup_players():
-    logging.debug("Cleanup: Stopping all VLC players")
+    logger.debug("Cleanup: Stopping all VLC players")
     for idx, player in enumerate(players):
         try:
             player.stop()
-            logging.debug(f"Player {idx+1} forcibly stopped during cleanup.")
+            logger.debug(f"Player {idx+1} forcibly stopped during cleanup.")
         except Exception as e:
-            logging.error(f"Error during cleanup for player {idx+1}: {e}")
+            logger.error(f"Error during cleanup for player {idx+1}: {e}")
 
 atexit.register(cleanup_players)
 
@@ -56,18 +47,18 @@ def pause_all_players():
         for idx, player in enumerate(players):
             try:
                 player.pause()
-                logging.debug(f"Player {idx+1} paused")
+                logger.debug(f"Player {idx+1} paused")
             except Exception as e:
-                logging.error(f"Pause error on player {idx+1}: {e}")
+                logger.error(f"Pause error on player {idx+1}: {e}")
 
 def play_all_players():
     with pause_lock:
         for idx, player in enumerate(players):
             try:
                 player.play()
-                logging.debug(f"Player {idx+1} resumed")
+                logger.debug(f"Player {idx+1} resumed")
             except Exception as e:
-                logging.error(f"Play error on player {idx+1}: {e}")
+                logger.error(f"Play error on player {idx+1}: {e}")
         pause_event.set()
 
 def jump_to_time():
@@ -75,19 +66,19 @@ def jump_to_time():
     try:
         minutes, seconds = map(int, time_str.split(':'))
         jump_ms = (minutes * 60 + seconds) * 1000
-        logging.debug(f"Jumping to {jump_ms} ms")
+        logger.debug(f"Jumping to {jump_ms} ms")
         pause_all_players()
         time.sleep(0.8)
         for idx, player in enumerate(players):
             player.set_time(jump_ms)
-            logging.debug(f"Player {idx+1} jumped to {jump_ms} ms")
+            logger.debug(f"Player {idx+1} jumped to {jump_ms} ms")
         time.sleep(1.2)
         pause_all_players()  # ensure players stay paused after jump
-        logging.debug("All players paused after jump")
+        logger.debug("All players paused after jump")
         if sync_status_label:
             sync_status_label.config(text="Synced to time: {:02}:{:02}".format(minutes, seconds), foreground="green")
     except Exception as e:
-        logging.error(f"Invalid jump time input '{time_str}': {e}")
+        logger.error(f"Invalid jump time input '{time_str}': {e}")
         if sync_status_label:
             sync_status_label.config(text="Invalid time format", foreground="red")
 
@@ -102,13 +93,13 @@ def stop():
     for idx, player in enumerate(players):
         try:
             player.stop()
-            logging.debug(f"Player {idx+1} stopped")
+            logger.debug(f"Player {idx+1} stopped")
         except Exception as e:
-            logging.error(f"Error stopping player {idx+1}: {e}")
+            logger.error(f"Error stopping player {idx+1}: {e}")
     if root:
         root.quit()
         root.destroy()
-        logging.debug("GUI closed")
+        logger.debug("GUI closed")
 
 def change_speed(rate):
     global last_known_rate
@@ -116,33 +107,33 @@ def change_speed(rate):
     for idx, player in enumerate(players):
         try:
             player.set_rate(rate)
-            logging.debug(f"Player {idx+1} speed set to {rate}x")
+            logger.debug(f"Player {idx+1} speed set to {rate}x")
         except Exception as e:
-            logging.error(f"Error changing speed on player {idx+1}: {e}")
+            logger.error(f"Error changing speed on player {idx+1}: {e}")
 
 def rewind_1_4_sec():
     for idx, player in enumerate(players):
         new_time = max(player.get_time() - 250, 0)
         player.set_time(new_time)
-        logging.debug(f"Player {idx+1} rewinded 0.25s to {new_time} ms")
+        logger.debug(f"Player {idx+1} rewinded 0.25s to {new_time} ms")
 
 def progress_1_4_sec():
     for idx, player in enumerate(players):
         new_time = player.get_time() + 250
         player.set_time(new_time)
-        logging.debug(f"Player {idx+1} forwarded 0.25s to {new_time} ms")
+        logger.debug(f"Player {idx+1} forwarded 0.25s to {new_time} ms")
 
 def rewind_30s():
     for idx, player in enumerate(players):
         new_time = max(player.get_time() - 30000, 0)
         player.set_time(new_time)
-        logging.debug(f"Player {idx+1} rewinded 30s to {new_time} ms")
+        logger.debug(f"Player {idx+1} rewinded 30s to {new_time} ms")
 
 def progress_30s():
     for idx, player in enumerate(players):
         new_time = player.get_time() + 30000
         player.set_time(new_time)
-        logging.debug(f"Player {idx+1} forwarded 30s to {new_time} ms")
+        logger.debug(f"Player {idx+1} forwarded 30s to {new_time} ms")
 
 def update_timer():
     if not hasattr(root, 'winfo_exists') or not root.winfo_exists():
@@ -170,35 +161,35 @@ def on_closing():
     if shutdown_called:
         return
     shutdown_called = True
-    logging.debug("Window close event triggered")
+    logger.debug("Window close event triggered")
     cleanup_players()
 
     try:
         root.quit()
-        logging.debug("Called root.quit()")
+        logger.debug("Called root.quit()")
     except Exception as e:
-        logging.error(f"Error in root.quit(): {e}")
+        logger.error(f"Error in root.quit(): {e}")
 
     try:
         root.destroy()
-        logging.debug("Called root.destroy()")
+        logger.debug("Called root.destroy()")
     except Exception as e:
-        logging.error(f"Error in root.destroy(): {e}")
+        logger.error(f"Error in root.destroy(): {e}")
 
 def on_key_press(event):
     if event.keysym == "Return":
-        logging.debug("Return key pressed")
+        logger.debug("Return key pressed")
         toggle_play_pause()
     elif event.keysym == "F11":
         is_fullscreen = root.attributes("-fullscreen")
         root.attributes("-fullscreen", not is_fullscreen)
-        logging.debug(f"Fullscreen toggled: now {'on' if not is_fullscreen else 'off'}")
+        logger.debug(f"Fullscreen toggled: now {'on' if not is_fullscreen else 'off'}")
 
 def create_gui(files):
     global root, frames, jump_entry, timer_label, overlay_label, last_files, sync_status_label
     last_files = files[:]
     root = tk.Tk()
-    logging.debug("Tkinter root window created.")
+    logger.debug("Tkinter root window created.")
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.title("Video Playback")
     root.bind("<Return>", on_key_press)
@@ -206,9 +197,9 @@ def create_gui(files):
 
     try:
         root.state('zoomed')
-        logging.debug("Window state set to zoomed (maximized)")
+        logger.debug("Window state set to zoomed (maximized)")
     except Exception as e:
-        logging.warning(f"Zoomed mode failed: {e}")
+        logger.warning(f"Zoomed mode failed: {e}")
 
     root.update_idletasks()
     x = (root.winfo_screenwidth() // 2) - (root.winfo_width() // 2)
@@ -220,7 +211,7 @@ def create_gui(files):
     num_videos = len(files)
     cols = int(num_videos ** 0.5 + 0.5)
     rows = (num_videos + cols - 1) // cols
-    logging.debug(f"Layout: {rows} rows x {cols} cols for {num_videos} video(s)")
+    logger.debug(f"Layout: {rows} rows x {cols} cols for {num_videos} video(s)")
 
     for r in range(rows + 1):
         root.grid_rowconfigure(r, weight=1)
@@ -310,10 +301,10 @@ def create_gui(files):
         try:
             h, m, s = int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6])
             root.footage_start_time = h * 3600 + m * 60 + s
-            logging.debug(f"Parsed footage start time: {h}:{m}:{s}")
+            logger.debug(f"Parsed footage start time: {h}:{m}:{s}")
         except:
             root.footage_start_time = 0
-            logging.warning("Failed to parse footage start time")
+            logger.warning("Failed to parse footage start time")
     else:
         root.footage_start_time = 0
 
@@ -322,7 +313,7 @@ def create_gui(files):
     overlay_label.grid(row=7, column=0, padx=5, pady=5, columnspan=3, sticky="ew")
 
     update_timer()
-    logging.debug("GUI setup complete. Entering main loop.")
+    logger.debug("GUI setup complete. Entering main loop.")
     root.mainloop()
 
 def initialize_players(files):
@@ -335,19 +326,19 @@ def initialize_players(files):
     ]
     instances = [vlc.Instance(*options) for _ in files]
     for idx, (instance, file) in enumerate(zip(instances, files)):
-        logging.debug(f"Setting up player {idx+1} for: {file}")
+        logger.debug(f"Setting up player {idx+1} for: {file}")
         player = instance.media_player_new()
         media = instance.media_new(file)
         player.set_media(media)
         player.set_hwnd(frames[idx].winfo_id())
         players.append(player)
         player.play()
-        logging.debug(f"Player {idx+1} started for pre-buffering")
+        logger.debug(f"Player {idx+1} started for pre-buffering")
     time.sleep(2.0)
     for idx, player in enumerate(players):
         player.pause()
-        logging.debug(f"Player {idx+1} paused after pre-buffer")
+        logger.debug(f"Player {idx+1} paused after pre-buffer")
 
 def play_videos(vlc_path, files):
-    logging.debug(f"Launching video playback with VLC path: {vlc_path}")
+    logger.debug(f"Launching video playback with VLC path: {vlc_path}")
     create_gui(files)

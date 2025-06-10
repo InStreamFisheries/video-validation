@@ -5,17 +5,10 @@ import logging
 from collections import defaultdict
 from tkinter import Tk, filedialog, StringVar, Label, Button, Frame, Toplevel, messagebox, ttk
 import json
-
 from video_player import play_videos
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        #logging.FileHandler("app_debug.log", mode='w'), removing for now
-        logging.StreamHandler()
-    ]
-)
+logger = logging.getLogger(__name__)
+logger.debug("navigation.py initialized.")
 
 file_pattern = re.compile(r"^(CAM\d+)_((\d{8})_(\d{6}|\d{4}))\.(mp4|ts)$")
 camera_files = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
@@ -36,17 +29,17 @@ def load_viewed_times():
             with open(VIEWED_FILE, "r") as f:
                 data = json.load(f)
                 viewed_times = set(data.keys())
-                logging.info(f"Loaded {len(viewed_times)} viewed times.")
+                logger.info(f"Loaded {len(viewed_times)} viewed times.")
         except Exception as e:
-            logging.error(f"Error loading viewed times: {e}")
+            logger.error(f"Error loading viewed times: {e}")
 
 def save_viewed_times():
     try:
         with open(VIEWED_FILE, "w") as f:
             json.dump({k: True for k in viewed_times}, f, indent=2)
-            logging.info(f"Saved {len(viewed_times)} viewed times.")
+            logger.info(f"Saved {len(viewed_times)} viewed times.")
     except Exception as e:
-        logging.error(f"Error saving viewed times: {e}")
+        logger.error(f"Error saving viewed times: {e}")
 
 def setup_vlc_path():
     if config["vlc_path"]:
@@ -67,32 +60,32 @@ def setup_vlc_path():
         config["vlc_path"] = vlc_path
         return vlc_path
     else:
-        logging.error("VLC path not selected. Exiting.")
+        logger.error("VLC path not selected. Exiting.")
         exit()
 
 def load_camera_files():
     global camera_files
     rec_path = filedialog.askdirectory(title="Select the REC Folder")
     if not rec_path:
-        logging.warning("No directory selected.")
+        logger.warning("No directory selected.")
         return False
 
     config["rec_path"] = rec_path
-    logging.info(f"Selected REC path: {rec_path}")
+    logger.info(f"Selected REC path: {rec_path}")
     camera_files.clear()
 
     for cam_num in range(1, 11):
         cam_folder = os.path.join(rec_path, f"CAM{cam_num}")
-        logging.debug(f"Scanning folder: {cam_folder}")
+        logger.debug(f"Scanning folder: {cam_folder}")
 
         if os.path.exists(cam_folder):
             for file in os.listdir(cam_folder):
                 full_path = os.path.join(cam_folder, file)
                 if os.path.isdir(full_path):
-                    logging.debug(f"Skipping directory: {file}")
+                    logger.debug(f"Skipping directory: {file}")
                     continue
                 if not file.lower().endswith((".mp4", ".ts")):
-                    logging.debug(f"Skipping non-video file: {file}")
+                    logger.debug(f"Skipping non-video file: {file}")
                     continue
                 match = file_pattern.match(file)
                 if match:
@@ -100,15 +93,15 @@ def load_camera_files():
                     year, month, day = date_part[:4], date_part[4:6], date_part[6:8]
                     camera_files[year][month][day].setdefault(time_part, []).append(full_path)
                 else:
-                    logging.debug(f"Unmatched file: {file}")
+                    logger.debug(f"Unmatched file: {file}")
         else:
-            logging.warning(f"Camera folder does not exist: {cam_folder}")
+            logger.warning(f"Camera folder does not exist: {cam_folder}")
 
     total_files = sum(len(times) for year in camera_files.values()
                       for month in year.values()
                       for day in month.values()
                       for times in day.values())
-    logging.info(f"Camera files loaded: {total_files}")
+    logger.info(f"Camera files loaded: {total_files}")
     return bool(camera_files)
 
 def display_summary():
@@ -160,7 +153,7 @@ def show_navigation_ui():
         try:
             root.iconbitmap(icon_path)
         except Exception as e:
-            logging.warning(f"Failed to load icon: {e}")
+            logger.warning(f"Failed to load icon: {e}")
 
     year_var = StringVar()
     month_var = StringVar()
@@ -247,7 +240,6 @@ def show_navigation_ui():
             raw_to_formatted[display_text] = raw
             formatted_times.append(display_text)
 
-
         dropdowns[3]['values'] = formatted_times
         if formatted_times:
             time_var.set(formatted_times[0])
@@ -291,8 +283,7 @@ def show_navigation_ui():
             viewed_times.clear()
             save_viewed_times()
             update_times()
-            logging.info("Viewed times cleared.")
-
+            logger.info("Viewed times cleared.")
 
     def play_selected_videos():
         vlc = setup_vlc_path()
@@ -300,16 +291,14 @@ def show_navigation_ui():
         t = getattr(time_var, "raw_time", None)
         if y and m and d and t:
             try:
-                play_videos(vlc, camera_files[y][m][d][t])
-            
+                play_videos(vlc, camera_files[y][m][d][t])        
                 viewed_key = f"{y}/{m}/{d}/{t}"
                 viewed_times.add(viewed_key)
                 save_viewed_times()
-
-                update_times()  
+                update_times()
 
             except KeyError:
-                logging.error("Selected time not found.")
+                logger.error("Selected time not found.")
 
     Button(root, text="Play Selected", command=play_selected_videos).grid(
     row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
