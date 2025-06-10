@@ -314,7 +314,7 @@ def show_navigation_ui():
     Button(root, text="Play Selected", command=play_selected_videos).grid(
     row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
 )
-    Button(root, text="Clear Viewed Times", command=clear_viewed_times).grid(
-    row=7, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="ew"
-)
+    #Button(root, text="Clear Viewed Times", command=clear_viewed_times).grid(
+    #row=7, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="ew"
+#)
     root.mainloop()
