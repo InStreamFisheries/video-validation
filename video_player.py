@@ -302,9 +302,10 @@ def create_gui(files):
             h, m, s = int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6])
             root.footage_start_time = h * 3600 + m * 60 + s
             logger.debug(f"Parsed footage start time: {h}:{m}:{s}")
-        except:
+        except Exception as e:
             root.footage_start_time = 0
-            logger.warning("Failed to parse footage start time")
+            logger.warning(f"Failed to parse footage start time: {e}")
+
     else:
         root.footage_start_time = 0
 
