@@ -9,6 +9,8 @@
 .vscode/
 video-validation.code-workspace
 
+viewed_files.json
+
 # Ignore spec files
 /specs/
 
