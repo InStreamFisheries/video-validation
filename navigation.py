@@ -11,15 +11,13 @@ import sys
 
 def get_writable_path(filename):
     if getattr(sys, 'frozen', False):
-        # running from exe
         app_name = "Video Validation"
-        appdata_dir = os.getenv('APPDATA')  # Windows safe
+        appdata_dir = os.getenv('APPDATA')
         if appdata_dir:
             app_folder = os.path.join(appdata_dir, app_name)
             os.makedirs(app_folder, exist_ok=True)
             return os.path.join(app_folder, filename)
         else:
-            # fallback
             return os.path.join(os.path.dirname(sys.executable), filename)
     else:
         return os.path.join(os.path.dirname(__file__), filename)
@@ -27,7 +25,8 @@ def get_writable_path(filename):
 logger = logging.getLogger(__name__)
 logger.debug("navigation.py initialized.")
 
-file_pattern = re.compile(r"^(CAM\d+)_((\d{8})_(\d{6}|\d{4}))\.(mp4|ts)$")
+#adding mkv support
+file_pattern = re.compile(r"^(CAM\d+)_((\d{8})_(\d{6}|\d{4}))\.(mp4|ts|mkv)$")
 camera_files = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 icon_path = None
 
@@ -102,6 +101,16 @@ def load_camera_files():
     save_config()
 
     logger.info(f"Selected REC path: {rec_path}")
+    return parse_existing_camera_files()
+
+def parse_existing_camera_files():
+    global camera_files
+    rec_path = config["rec_path"]
+    if not rec_path or not os.path.exists(rec_path):
+        logger.warning("Invalid REC path in config.")
+        return False
+
+    logger.info(f"Re-loading existing REC path: {rec_path}")
     camera_files.clear()
 
     for cam_num in range(1, 11):
@@ -114,7 +123,7 @@ def load_camera_files():
                 if os.path.isdir(full_path):
                     logger.debug(f"Skipping directory: {file}")
                     continue
-                if not file.lower().endswith((".mp4", ".ts")):
+                if not file.lower().endswith((".mp4", ".ts", ".mkv")):
                     logger.debug(f"Skipping non-video file: {file}")
                     continue
                 match = file_pattern.match(file)
@@ -193,7 +202,7 @@ def show_navigation_ui():
     rec_path_label = Label(root, text=f"Selected Drive: {config.get('rec_path', 'No Drive Selected')}", anchor="w", wraplength=400)
     rec_path_label.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 5), sticky="w")
 
-    drive_button = Button(root, text="Select Drive", command=lambda: threading.Thread(target=threaded_load).start())
+    drive_button = Button(root, text="Select Drive", command=lambda: threading.Thread(target=lambda: threaded_load(force_select=True)).start())
     drive_button.grid(row=1, column=0, columnspan=3, padx=10, pady=(0, 15), sticky="ew")
 
     stats = {
@@ -283,11 +292,18 @@ def show_navigation_ui():
                 time_var.set(formatted_times[0])
                 setattr(time_var, "raw_time", raw_to_formatted[formatted_times[0]])
 
+        def on_select(event):
+            selected_display_text = time_var.get()
+            raw = raw_to_formatted.get(selected_display_text)
+            if raw:
+                setattr(time_var, "raw_time", raw)
+
+        dropdowns[3].bind("<<ComboboxSelected>>", on_select)
     dropdowns[0].bind("<<ComboboxSelected>>", update_months)
     dropdowns[1].bind("<<ComboboxSelected>>", update_days)
     dropdowns[2].bind("<<ComboboxSelected>>", update_times)
 
-    def threaded_load():
+    def threaded_load(force_select=False):
         loading = Toplevel(root)
         Label(loading, text="Scanning drive, please wait...").pack(padx=20, pady=20)
         root.update_idletasks()
@@ -299,7 +315,12 @@ def show_navigation_ui():
         loading.update()
 
         def bg():
-            if load_camera_files():
+            if force_select or not config.get("rec_path"):
+                success = load_camera_files()
+            else:
+                success = parse_existing_camera_files()
+
+            if success:
                 rec_path_label.config(text=f"Selected Drive: {config['rec_path']}")
                 update_years()
                 update_summary()
@@ -323,26 +344,29 @@ def show_navigation_ui():
         t = getattr(time_var, "raw_time", None)
         if y and m and d and t:
             try:
-                play_videos(vlc, camera_files[y][m][d][t], icon_path)
                 viewed_key = f"{y}/{m}/{d}/{t}"
                 viewed_times.add(viewed_key)
                 config_data["last_viewed_file"] = viewed_key
                 save_config()
+
+                logger.info(f"Playing video(s) for: {viewed_key}")
+
+                play_videos(vlc, camera_files[y][m][d][t], icon_path)
                 update_times()
+
             except KeyError:
                 logger.error("Selected time not found.")
 
     Button(root, text="Play Selected", command=play_selected_videos).grid(
-    row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
-)
+        row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
+    )
 
     #Button(root, text="Clear Viewed Times", command=clear_viewed_times).grid(
     #row=7, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="ew"
-#)
+    #)
 
     if config_data.get("last_drive"):
         config["rec_path"] = config_data["last_drive"]
-        threading.Thread(target=threaded_load).start()
-
+        threading.Thread(target=lambda: threaded_load(force_select=False)).start()
 
     root.mainloop()
