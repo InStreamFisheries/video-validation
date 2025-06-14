@@ -4,8 +4,25 @@ import threading
 import logging
 from collections import defaultdict
 from tkinter import Tk, filedialog, StringVar, Label, Button, Frame, Toplevel, messagebox, ttk
+import tkinter as tk
 import json
 from video_player import play_videos
+import sys
+
+def get_writable_path(filename):
+    if getattr(sys, 'frozen', False):
+        # running from exe
+        app_name = "Video Validation"
+        appdata_dir = os.getenv('APPDATA')  # Windows safe
+        if appdata_dir:
+            app_folder = os.path.join(appdata_dir, app_name)
+            os.makedirs(app_folder, exist_ok=True)
+            return os.path.join(app_folder, filename)
+        else:
+            # fallback
+            return os.path.join(os.path.dirname(sys.executable), filename)
+    else:
+        return os.path.join(os.path.dirname(__file__), filename)
 
 logger = logging.getLogger(__name__)
 logger.debug("navigation.py initialized.")
@@ -19,27 +36,37 @@ config = {
     "rec_path": None,
 }
 
-VIEWED_FILE = "viewed_files.json"
+CONFIG_FILE = get_writable_path("config.json")
+
+config_data = {
+    "last_drive": None,
+    "viewed_files": {},
+    "last_viewed_file": None
+}
+
 viewed_times = set()
 
-def load_viewed_times():
-    global viewed_times
-    if os.path.exists(VIEWED_FILE):
+def load_config():
+    global config_data, viewed_times
+    logger.info(f"Using config.json at: {CONFIG_FILE}")
+    if os.path.exists(CONFIG_FILE):
         try:
-            with open(VIEWED_FILE, "r") as f:
-                data = json.load(f)
-                viewed_times = set(data.keys())
-                logger.info(f"Loaded {len(viewed_times)} viewed times.")
+            with open(CONFIG_FILE, "r") as f:
+                config_data = json.load(f)
+                viewed_times = set(config_data.get("viewed_files", {}).keys())
+                logger.info(f"Loaded {len(viewed_times)} viewed times. Last drive: {config_data.get('last_drive')}")
         except Exception as e:
-            logger.error(f"Error loading viewed times: {e}")
+            logger.error(f"Error loading config: {e}")
 
-def save_viewed_times():
+def save_config():
+    global config_data
+    config_data["viewed_files"] = {k: True for k in viewed_times}
     try:
-        with open(VIEWED_FILE, "w") as f:
-            json.dump({k: True for k in viewed_times}, f, indent=2)
-            logger.info(f"Saved {len(viewed_times)} viewed times.")
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config_data, f, indent=2)
+            logger.info(f"Saved config with {len(viewed_times)} viewed times and last drive: {config_data.get('last_drive')}")
     except Exception as e:
-        logger.error(f"Error saving viewed times: {e}")
+        logger.error(f"Error saving config: {e}")
 
 def setup_vlc_path():
     if config["vlc_path"]:
@@ -71,6 +98,9 @@ def load_camera_files():
         return False
 
     config["rec_path"] = rec_path
+    config_data["last_drive"] = rec_path
+    save_config()
+
     logger.info(f"Selected REC path: {rec_path}")
     camera_files.clear()
 
@@ -142,7 +172,7 @@ def display_summary():
 
 def show_navigation_ui():
     root = Tk()
-    load_viewed_times()
+    load_config()
     root.title("Video Navigation")
     root.geometry("300x330")
     root.grid_columnconfigure(0, weight=1)
@@ -242,16 +272,16 @@ def show_navigation_ui():
 
         dropdowns[3]['values'] = formatted_times
         if formatted_times:
-            time_var.set(formatted_times[0])
-            setattr(time_var, "raw_time", raw_to_formatted[formatted_times[0]])
-
-        def on_select(event):
-            selected = time_var.get()
-            raw = raw_to_formatted.get(selected)
-            if raw:
-                setattr(time_var, "raw_time", raw)
-
-        dropdowns[3].bind("<<ComboboxSelected>>", on_select)
+            last_viewed = config_data.get("last_viewed_file")
+            for display_text, raw in raw_to_formatted.items():
+                viewed_key = f"{y}/{m}/{d}/{raw}"
+                if viewed_key == last_viewed:
+                    time_var.set(display_text)
+                    setattr(time_var, "raw_time", raw)
+                    break
+            else:
+                time_var.set(formatted_times[0])
+                setattr(time_var, "raw_time", raw_to_formatted[formatted_times[0]])
 
     dropdowns[0].bind("<<ComboboxSelected>>", update_months)
     dropdowns[1].bind("<<ComboboxSelected>>", update_days)
@@ -281,7 +311,9 @@ def show_navigation_ui():
         confirm = messagebox.askyesno("Confirm Clear", "Are you sure you want to clear all viewed times?")
         if confirm:
             viewed_times.clear()
-            save_viewed_times()
+            config_data["viewed_files"] = {}
+            config_data["last_viewed_file"] = None
+            save_config()
             update_times()
             logger.info("Viewed times cleared.")
 
@@ -291,19 +323,26 @@ def show_navigation_ui():
         t = getattr(time_var, "raw_time", None)
         if y and m and d and t:
             try:
-                play_videos(vlc, camera_files[y][m][d][t])        
+                play_videos(vlc, camera_files[y][m][d][t], icon_path)
                 viewed_key = f"{y}/{m}/{d}/{t}"
                 viewed_times.add(viewed_key)
-                save_viewed_times()
+                config_data["last_viewed_file"] = viewed_key
+                save_config()
                 update_times()
-
             except KeyError:
                 logger.error("Selected time not found.")
 
     Button(root, text="Play Selected", command=play_selected_videos).grid(
     row=6, column=0, columnspan=3, padx=10, pady=20, sticky="ew"
 )
+
     #Button(root, text="Clear Viewed Times", command=clear_viewed_times).grid(
     #row=7, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="ew"
 #)
+
+    if config_data.get("last_drive"):
+        config["rec_path"] = config_data["last_drive"]
+        threading.Thread(target=threaded_load).start()
+
+
     root.mainloop()
