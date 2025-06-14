@@ -13,6 +13,7 @@ viewed_files.json
 
 # Ignore spec files
 /specs/
+config.json
 
 
 # Byte-compiled / optimized / DLL files
