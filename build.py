@@ -7,7 +7,8 @@ source_script = "main.py"
 default_icon = os.path.join(os.path.dirname(__file__), "appIcon.ico")
 
 embedded_files = [
-    "version.txt"
+    "version.txt",
+    "appIcon.ico"
 ]
 
 def validate_icon_path():
@@ -59,7 +60,6 @@ def build_app(version):
         f"--specpath={spec_dir}",
         source_script,
     ]
-
 
     for file in embedded_files:
         file_path = os.path.join(os.getcwd(), file)
