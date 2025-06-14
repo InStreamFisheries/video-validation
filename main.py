@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 import navigation
 import video_player
@@ -16,8 +17,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.debug("main.py initialized.")
 
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 def setup_icon_path():
-    icon_path = os.path.join(os.path.dirname(__file__), "appIcon.ico")
+    icon_path = resource_path("appIcon.ico")
     if not os.path.exists(icon_path):
         logger.warning(f"Icon file not found at {icon_path}. Using default system icons.")
         icon_path = None
