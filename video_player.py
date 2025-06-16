@@ -2,142 +2,48 @@ import vlc
 import os
 import tkinter as tk
 from tkinter import ttk
-import threading
-import logging
 import time
-import atexit
-import sys
-
-logger = logging.getLogger(__name__)
-logger.debug("video_player.py initialized.")
-
-if getattr(sys, 'frozen', False):
-    bundle_dir = sys._MEIPASS
-    os.environ["PATH"] = f"{bundle_dir};{os.environ['PATH']}"
-    os.environ["VLC_PLUGIN_PATH"] = os.path.join(bundle_dir, "plugins")
-    logger.debug(f"PyInstaller detected. Using bundled VLC at: {bundle_dir}")
 
 players = []
 frames = []
-icon_path = None
-shutdown_called = False
-last_files = []
-last_known_rate = 1.0
-
-pause_lock = threading.Lock()
-pause_event = threading.Event()
-pause_event.set()
-
-sync_status_label = None
-
-def cleanup_players():
-    logger.debug("Cleanup: Stopping all VLC players")
-    for idx, player in enumerate(players):
-        try:
-            player.stop()
-            logger.debug(f"Player {idx+1} forcibly stopped during cleanup.")
-        except Exception as e:
-            logger.error(f"Error during cleanup for player {idx+1}: {e}")
-
-atexit.register(cleanup_players)
+current_speed = 1
+speed_buttons = []
+window_base_title = ""
 
 def pause_all_players():
-    with pause_lock:
-        pause_event.clear()
-        for idx, player in enumerate(players):
-            try:
-                player.pause()
-                logger.debug(f"Player {idx+1} paused")
-            except Exception as e:
-                logger.error(f"Pause error on player {idx+1}: {e}")
+    for player in players:
+        player.pause()
 
 def play_all_players():
-    with pause_lock:
-        for idx, player in enumerate(players):
-            try:
-                player.play()
-                logger.debug(f"Player {idx+1} resumed")
-            except Exception as e:
-                logger.error(f"Play error on player {idx+1}: {e}")
-        pause_event.set()
-
-def jump_to_time():
-    time_str = jump_entry.get()
-    try:
-        minutes, seconds = map(int, time_str.split(':'))
-        jump_ms = (minutes * 60 + seconds) * 1000
-        logger.debug(f"Jumping to {jump_ms} ms")
-        pause_all_players()
-        time.sleep(0.8)
-        for idx, player in enumerate(players):
-            player.set_time(jump_ms)
-            logger.debug(f"Player {idx+1} jumped to {jump_ms} ms")
-        time.sleep(1.2)
-        pause_all_players()  # ensure players stay paused after jump
-        logger.debug("All players paused after jump")
-        if sync_status_label:
-            sync_status_label.config(text="Synced to time: {:02}:{:02}".format(minutes, seconds), foreground="green")
-    except Exception as e:
-        logger.error(f"Invalid jump time input '{time_str}': {e}")
-        if sync_status_label:
-            sync_status_label.config(text="Invalid time format", foreground="red")
+    for player in players:
+        player.play()
 
 def toggle_play_pause():
-    playing = any(player.is_playing() for player in players)
-    if playing:
+    if any(player.is_playing() for player in players):
         pause_all_players()
+        root.title(f"{window_base_title} — PAUSED")
     else:
         play_all_players()
-
-def stop():
-    for idx, player in enumerate(players):
-        try:
-            player.stop()
-            logger.debug(f"Player {idx+1} stopped")
-        except Exception as e:
-            logger.error(f"Error stopping player {idx+1}: {e}")
-    if root:
-        root.quit()
-        root.destroy()
-        logger.debug("GUI closed")
+        root.title(f"{window_base_title} — PLAYING")
 
 def change_speed(rate):
-    global last_known_rate
-    last_known_rate = rate
-    for idx, player in enumerate(players):
-        try:
-            player.set_rate(rate)
-            logger.debug(f"Player {idx+1} speed set to {rate}x")
-        except Exception as e:
-            logger.error(f"Error changing speed on player {idx+1}: {e}")
+    for player in players:
+        player.set_rate(rate)
 
-def rewind_1_4_sec():
-    for idx, player in enumerate(players):
-        new_time = max(player.get_time() - 250, 0)
-        player.set_time(new_time)
-        logger.debug(f"Player {idx+1} rewinded 0.25s to {new_time} ms")
+def set_speed(r):
+    global current_speed
+    current_speed = r
+    change_speed(r)
+    update_speed_button_styles()
 
-def progress_1_4_sec():
-    for idx, player in enumerate(players):
-        new_time = player.get_time() + 250
-        player.set_time(new_time)
-        logger.debug(f"Player {idx+1} forwarded 0.25s to {new_time} ms")
-
-def rewind_30s():
-    for idx, player in enumerate(players):
-        new_time = max(player.get_time() - 30000, 0)
-        player.set_time(new_time)
-        logger.debug(f"Player {idx+1} rewinded 30s to {new_time} ms")
-
-def progress_30s():
-    for idx, player in enumerate(players):
-        new_time = player.get_time() + 30000
-        player.set_time(new_time)
-        logger.debug(f"Player {idx+1} forwarded 30s to {new_time} ms")
+def update_speed_button_styles():
+    for rate, btn in speed_buttons:
+        if rate == current_speed:
+            btn.config(relief="sunken", font=("TkDefaultFont", 10, "bold"), foreground="blue")
+        else:
+            btn.config(relief="raised", font=("TkDefaultFont", 10), foreground="black")
 
 def update_timer():
-    if not hasattr(root, 'winfo_exists') or not root.winfo_exists():
-        return
     if players:
         current_time_ms = sum(player.get_time() for player in players) // len(players)
         current_time_sec = current_time_ms // 1000
@@ -157,167 +63,159 @@ def update_timer():
     root.after(1000, update_timer)
 
 def on_closing():
-    global shutdown_called
-    if shutdown_called:
-        return
-    shutdown_called = True
-    logger.debug("Window close event triggered")
-    cleanup_players()
+    print("on_closing called")
+    for player in players:
+        try:
+            player.stop()
+        except Exception as e:
+            print(f"Error stopping player: {e}")
+    players.clear()
 
     try:
-        root.quit()
-        logger.debug("Called root.quit()")
+        if root.winfo_exists():
+            root.destroy()
     except Exception as e:
-        logger.error(f"Error in root.quit(): {e}")
+        print(f"Error destroying window: {e}")
+
+def stop_app():
+    on_closing()
+
+def create_gui(files, icon_path=None):
+    global root, frames, timer_label, overlay_label
+    global current_speed, speed_buttons, window_base_title
+
+    root = tk.Toplevel()
+    root.title("Video Player")
 
     try:
-        root.destroy()
-        logger.debug("Called root.destroy()")
+        if icon_path:
+            if icon_path.endswith(".ico") and os.name == "nt":
+                root.iconbitmap(icon_path)
+            else:
+                img = tk.PhotoImage(file=icon_path)
+                root.iconphoto(True, img)
     except Exception as e:
-        logger.error(f"Error in root.destroy(): {e}")
+        print(f"Failed to set video player icon: {e}")
 
-def on_key_press(event):
-    if event.keysym == "Return":
-        logger.debug("Return key pressed")
-        toggle_play_pause()
-    elif event.keysym == "F11":
-        is_fullscreen = root.attributes("-fullscreen")
-        root.attributes("-fullscreen", not is_fullscreen)
-        logger.debug(f"Fullscreen toggled: now {'on' if not is_fullscreen else 'off'}")
 
-def create_gui(files):
-    global root, frames, jump_entry, timer_label, overlay_label, last_files, sync_status_label
-    last_files = files[:]
-    root = tk.Tk()
-    logger.debug("Tkinter root window created.")
     root.protocol("WM_DELETE_WINDOW", on_closing)
-    root.title("Video Playback")
-    root.bind("<Return>", on_key_press)
-    root.bind("<F11>", on_key_press)
+    root.bind("<Return>", lambda e: toggle_play_pause())
+    root.bind("<F11>", lambda e: root.attributes("-fullscreen", not root.attributes("-fullscreen")))
 
     try:
         root.state('zoomed')
-        logger.debug("Window state set to zoomed (maximized)")
-    except Exception as e:
-        logger.warning(f"Zoomed mode failed: {e}")
-
-    root.update_idletasks()
-    x = (root.winfo_screenwidth() // 2) - (root.winfo_width() // 2)
-    y = (root.winfo_screenheight() // 2) - (root.winfo_height() // 2)
-    root.geometry(f"+{x}+{y}")
-    root.lift()
-    root.focus_force()
+    except:
+        pass
 
     num_videos = len(files)
     cols = int(num_videos ** 0.5 + 0.5)
     rows = (num_videos + cols - 1) // cols
-    logger.debug(f"Layout: {rows} rows x {cols} cols for {num_videos} video(s)")
 
-    for r in range(rows + 1):
-        root.grid_rowconfigure(r, weight=1)
+
+    for r in range(rows):
+        root.grid_rowconfigure(r, weight=10)
+
+    root.grid_rowconfigure(rows, weight=1)
+
     for c in range(cols):
         root.grid_columnconfigure(c, weight=1)
-
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight() - 80
-    video_height = int(screen_height * 0.8 / rows)
 
     frames = []
     for idx in range(num_videos):
         row, col = divmod(idx, cols)
-        frame = tk.Frame(root, width=screen_width // cols, height=video_height)
+        frame = tk.Frame(root, bg="black")
         frame.grid(row=row, column=col, sticky="nsew")
-        frame.grid_propagate(False)
         frames.append(frame)
 
     control_frame = tk.Frame(root)
     control_frame.grid(row=rows, column=0, columnspan=cols, sticky="nsew")
 
-    root.after(100, lambda: initialize_players(files))
+    control_frame.grid_propagate(False)
+    control_frame.configure(height=80)
 
-    overlay_frames = []
+    tk.Button(control_frame, text="Play/Pause", command=toggle_play_pause).grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
-    for idx, frame in enumerate(frames):
-        frame.update_idletasks()
-        x = frame.winfo_rootx() - root.winfo_rootx()
-        y = frame.winfo_rooty() - root.winfo_rooty()
-        w = frame.winfo_width()
-        h = frame.winfo_height()
+    tk.Button(control_frame, text="Stop", command=stop_app).grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
-        # black box 40% width, 15% height in bottom right corner
-        box_width = int(w * 0.40)
-        box_height = int(h * 0.10)
-        box_x = x + w - box_width - 10
-        box_y = y + h - box_height - 10
+    speed_frame = tk.Frame(control_frame)
+    speed_frame.grid(row=1, column=0, columnspan=4, sticky="w", padx=5, pady=5)
 
-        overlay = tk.Frame(root, bg="black")
-        overlay.place(x=box_x, y=box_y, width=box_width, height=box_height)
+    tk.Label(speed_frame, text="Speed:").pack(side="left", padx=5)
 
-        overlay_frames.append(overlay)
+    speed_buttons = []
+    for rate in [0.25, 0.5, 1, 2]:
+        btn = tk.Button(speed_frame, text=f"{rate}x", command=lambda r=rate: set_speed(r))
+        btn.pack(side="left", padx=2)
+        speed_buttons.append((rate, btn))
 
-        def on_resize(event, overlay=overlay, frame=frame):
-            frame.update_idletasks()
-            x = frame.winfo_rootx() - root.winfo_rootx()
-            y = frame.winfo_rooty() - root.winfo_rooty()
-            w = frame.winfo_width()
-            h = frame.winfo_height()
-            box_width = int(w * 0.40)
-            box_height = int(h * 0.10)
-            box_x = x + w - box_width - 10
-            box_y = y + h - box_height - 10
-            overlay.place(x=box_x, y=box_y, width=box_width, height=box_height)
+    update_speed_button_styles()
 
-        frame.bind("<Configure>", on_resize)
-
-    ttk.Button(control_frame, text="Play/Pause", command=toggle_play_pause).grid(row=0, column=1, padx=5, pady=5)
-    ttk.Button(control_frame, text="Stop", command=stop).grid(row=0, column=2, padx=5, pady=5)
-
-    ttk.Label(control_frame, text="Speed:").grid(row=1, column=0, padx=5, pady=5)
-    for i, rate in enumerate([0.25, 0.5, 1, 2]):
-        ttk.Button(control_frame, text=f"{rate}x", command=lambda r=rate: change_speed(r)).grid(row=1, column=i + 1, padx=5, pady=5)
-
-    ttk.Button(control_frame, text="Rewind (1/4s)", command=rewind_1_4_sec).grid(row=3, column=0, padx=5, pady=5)
-    ttk.Button(control_frame, text="Progress (1/4s)", command=progress_1_4_sec).grid(row=3, column=1, padx=5, pady=5)
-    ttk.Button(control_frame, text="Rewind (30s)", command=rewind_30s).grid(row=3, column=2, padx=5, pady=5)
-    ttk.Button(control_frame, text="Progress (30s)", command=progress_30s).grid(row=3, column=3, padx=5, pady=5)
-
-    ttk.Label(control_frame, text="Jump to (MM:SS):").grid(row=4, column=0, padx=5, pady=5)
-    jump_entry = ttk.Entry(control_frame, width=8)
-    jump_entry.grid(row=4, column=1, padx=5, pady=5)
-    ttk.Button(control_frame, text="Go", command=jump_to_time).grid(row=4, column=2, padx=5, pady=5)
-
-    sync_status_label = ttk.Label(control_frame, text="", font=("TkDefaultFont", 9, "bold"))
-    sync_status_label.grid(row=4, column=3, padx=10, pady=5, sticky="w")
+    control_frame.grid_columnconfigure(1, weight=1)
+    control_frame.grid_columnconfigure(2, weight=1)
 
     timer_label = ttk.Label(control_frame, text="00:00 / 00:00")
-    timer_label.grid(row=5, column=1, padx=5, pady=5, columnspan=2)
+    timer_label.grid(row=5, column=0, padx=5, pady=5, sticky="w")
+
+    overlay_label = ttk.Label(control_frame, text="Footage Time: --:--:--", font=("TkDefaultFont", 12, "bold"))
+    overlay_label.grid(row=5, column=3, padx=5, pady=5, sticky="e")
 
     filename = os.path.basename(files[0])
-    display_name = filename[5:] if filename.startswith("CAM") else filename
+    display_name = filename
+    if filename.startswith("CAM"):
+        display_name = filename[5:]
 
+    window_base_title = f"Video Player — {display_name} loaded"
+    root.title(f"{window_base_title} — PAUSED")  # initial state
+
+    # Parse footage start time
     parts = filename.split("_")
     if len(parts) >= 3:
         time_part = parts[2][:6]
         try:
             h, m, s = int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6])
             root.footage_start_time = h * 3600 + m * 60 + s
-            logger.debug(f"Parsed footage start time: {h}:{m}:{s}")
-        except Exception as e:
+        except Exception:
             root.footage_start_time = 0
-            logger.warning(f"Failed to parse footage start time: {e}")
-
     else:
         root.footage_start_time = 0
 
-    ttk.Label(control_frame, text=f"Now playing: {display_name}").grid(row=6, column=0, padx=5, pady=5, columnspan=3)
-    overlay_label = ttk.Label(control_frame, text="Footage Time: --:--:--", font=("TkDefaultFont", 10, "bold"))
-    overlay_label.grid(row=7, column=0, padx=5, pady=5, columnspan=3, sticky="ew")
-
+    root.after(100, lambda: initialize_players(files, icon_path))
     update_timer()
-    logger.debug("GUI setup complete. Entering main loop.")
-    root.mainloop()
 
-def initialize_players(files):
+def initialize_players(files, icon_path=None):
+    print("Initializing players for files:")
+    for f in files:
+        print(f"  --> {f}")
+
+    loading_popup = tk.Toplevel(root)
+    loading_popup.title("Loading Videos...")
+
+    try:
+        if icon_path:
+            if icon_path.endswith(".ico") and os.name == "nt":
+                loading_popup.iconbitmap(icon_path)
+            else:
+                img = tk.PhotoImage(file=icon_path)
+                loading_popup.iconphoto(True, img)
+    except Exception as e:
+        print(f"Failed to set loading popup icon: {e}")
+
+
+    loading_popup.geometry("300x100")
+    loading_popup.transient(root)
+    loading_popup.grab_set()
+    loading_popup.resizable(False, False)
+
+    tk.Label(loading_popup, text="Loading videos...\nPlease wait.").pack(expand=True)
+    loading_popup.update()
+
+    loading_popup.update_idletasks()
+    w = loading_popup.winfo_width()
+    h = loading_popup.winfo_height()
+    x = (root.winfo_screenwidth() // 2) - (w // 2)
+    y = (root.winfo_screenheight() // 2) - (h // 2)
+    loading_popup.geometry(f"+{x}+{y}")
+
     options = [
         "--file-caching=1000",
         "--network-caching=1000",
@@ -326,20 +224,58 @@ def initialize_players(files):
         "--quiet"
     ]
     instances = [vlc.Instance(*options) for _ in files]
-    for idx, (instance, file) in enumerate(zip(instances, files)):
-        logger.debug(f"Setting up player {idx+1} for: {file}")
+    for instance, file, frame in zip(instances, files, frames):
+        print(f"\nCreating player for: {file}")
         player = instance.media_player_new()
         media = instance.media_new(file)
         player.set_media(media)
-        player.set_hwnd(frames[idx].winfo_id())
+        print(f"  --> Media set for {file}")
+        hwnd = frame.winfo_id()
+        print(f"  --> hwnd for frame: {hwnd}")
+        player.set_hwnd(hwnd)
         players.append(player)
         player.play()
-        logger.debug(f"Player {idx+1} started for pre-buffering")
-    time.sleep(2.0)
-    for idx, player in enumerate(players):
-        player.pause()
-        logger.debug(f"Player {idx+1} paused after pre-buffer")
+        root.update()
 
-def play_videos(vlc_path, files):
-    logger.debug(f"Launching video playback with VLC path: {vlc_path}")
-    create_gui(files)
+        for i in range(10):
+            state = player.get_state()
+            print(f"    Pre-buffer check {i}: player state = {state}")
+            if state == vlc.State.Playing:
+                print(f"    Detected State.Playing, waiting 0.15 sec to let frame render...")
+                time.sleep(0.15)
+                break
+            if state not in (vlc.State.Opening, vlc.State.NothingSpecial):
+                break
+            time.sleep(0.1)
+
+        player.pause()
+        final_state = player.get_state()
+        print(f"  --> Player paused for {file}, final state: {final_state}")
+
+        if final_state in (vlc.State.Error, vlc.State.Opening):
+            print(f"  --> Player failed to load ({final_state}), retrying once...")
+            player.stop()
+            player.set_media(media)
+            player.set_hwnd(hwnd)
+            player.play()
+            root.update()
+            for i in range(10):
+                state = player.get_state()
+                print(f"    Retry pre-buffer check {i}: player state = {state}")
+                if state == vlc.State.Playing:
+                    print(f"    Detected State.Playing on retry, waiting 0.15 sec to let frame render...")
+                    time.sleep(0.15)
+                    break
+                if state not in (vlc.State.Opening, vlc.State.NothingSpecial):
+                    break
+                time.sleep(0.1)
+            player.pause()
+            final_state = player.get_state()
+            print(f"  --> Retry complete, final state: {final_state}")
+
+    loading_popup.grab_release()
+    loading_popup.destroy()
+    root.focus_force()
+
+def play_videos(vlc_path, files, icon_path=None):
+    create_gui(files, icon_path)
