@@ -48,7 +48,11 @@ def update_timer():
         current_time_ms = sum(player.get_time() for player in players) // len(players)
         current_time_sec = current_time_ms // 1000
         minutes, seconds = divmod(current_time_sec, 60)
+
         duration_ms = players[0].get_length()
+        if duration_ms <= 0:
+            root.after(1000, update_timer)
+            return
         duration_sec = duration_ms // 1000
         duration_minutes, duration_seconds = divmod(duration_sec, 60)
 
@@ -97,7 +101,6 @@ def create_gui(files, icon_path=None):
     except Exception as e:
         print(f"Failed to set video player icon: {e}")
 
-
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.bind("<Return>", lambda e: toggle_play_pause())
     root.bind("<F11>", lambda e: root.attributes("-fullscreen", not root.attributes("-fullscreen")))
@@ -110,7 +113,6 @@ def create_gui(files, icon_path=None):
     num_videos = len(files)
     cols = int(num_videos ** 0.5 + 0.5)
     rows = (num_videos + cols - 1) // cols
-
 
     for r in range(rows):
         root.grid_rowconfigure(r, weight=10)
@@ -125,16 +127,36 @@ def create_gui(files, icon_path=None):
         row, col = divmod(idx, cols)
         frame = tk.Frame(root, bg="black")
         frame.grid(row=row, column=col, sticky="nsew")
+        frame.grid_propagate(False)
         frames.append(frame)
+
+    # add bottom-right overlay boxes in the root window
+    overlay_frames = []
+    for idx, frame in enumerate(frames):
+        overlay = tk.Frame(root, bg="black")
+        overlay_frames.append(overlay)
+
+        def place_overlay(event=None, overlay=overlay, frame=frame):
+            frame.update_idletasks()
+            x = frame.winfo_rootx() - root.winfo_rootx()
+            y = frame.winfo_rooty() - root.winfo_rooty()
+            w = frame.winfo_width()
+            h = frame.winfo_height()
+            box_width = int(w * 0.4)
+            box_height = int(h * 0.1)
+            box_x = x + w - box_width - 10
+            box_y = y + h - box_height - 10
+            overlay.place(x=box_x, y=box_y, width=box_width, height=box_height)
+
+        frame.bind("<Configure>", place_overlay)
+        root.after(500, place_overlay)
 
     control_frame = tk.Frame(root)
     control_frame.grid(row=rows, column=0, columnspan=cols, sticky="nsew")
-
     control_frame.grid_propagate(False)
     control_frame.configure(height=80)
 
     tk.Button(control_frame, text="Play/Pause", command=toggle_play_pause).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-
     tk.Button(control_frame, text="Stop", command=stop_app).grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
     speed_frame = tk.Frame(control_frame)
@@ -165,19 +187,25 @@ def create_gui(files, icon_path=None):
         display_name = filename[5:]
 
     window_base_title = f"Video Player — {display_name} loaded"
-    root.title(f"{window_base_title} — PAUSED")  # initial state
+    root.title(f"{window_base_title} — PAUSED")
 
-    # Parse footage start time
+    root.footage_start_time = 0
     parts = filename.split("_")
     if len(parts) >= 3:
-        time_part = parts[2][:6]
-        try:
-            h, m, s = int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6])
-            root.footage_start_time = h * 3600 + m * 60 + s
-        except Exception:
-            root.footage_start_time = 0
+        time_str = parts[2].split(".")[0]
+        if time_str.isdigit():
+            try:
+                h = int(time_str[0:2])
+                m = int(time_str[2:4])
+                s = int(time_str[4:6]) if len(time_str) >= 6 else 0
+                root.footage_start_time = h * 3600 + m * 60 + s
+                print(f"[DEBUG] Parsed footage start time: {h:02}:{m:02}:{s:02}")
+            except Exception as e:
+                print(f"[WARNING] Failed to parse footage start time: {e}")
+        else:
+            print(f"[DEBUG] Invalid time part in filename: {time_str}")
     else:
-        root.footage_start_time = 0
+        print(f"[DEBUG] Filename does not follow expected pattern: {filename}")
 
     root.after(100, lambda: initialize_players(files, icon_path))
     update_timer()
@@ -199,7 +227,6 @@ def initialize_players(files, icon_path=None):
                 loading_popup.iconphoto(True, img)
     except Exception as e:
         print(f"Failed to set loading popup icon: {e}")
-
 
     loading_popup.geometry("300x100")
     loading_popup.transient(root)
