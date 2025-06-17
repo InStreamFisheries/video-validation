@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from tkinter import ttk
 import time
+from time import monotonic as now
 
 players = []
 frames = []
@@ -13,13 +14,38 @@ skip_configurable_seconds = 10
 control_widgets = []
 skip_in_progress = False
 
+playback_start_monotonic = 0
+manual_offset = 0
+
+
+DEBUG_LOGGING = True
+
+def log(msg):
+    if DEBUG_LOGGING:
+        print(f"[DEBUG] {time.strftime('%H:%M:%S')} — {msg}")
+
+
 def pause_all_players():
+    global playback_start_monotonic, manual_offset
+    if playback_start_monotonic > 0:
+        manual_offset += now() - playback_start_monotonic
+    playback_start_monotonic = 0
+
     for player in players:
-        player.pause()
+        try:
+            player.pause()
+        except:
+            pass
+
 
 def play_all_players():
+    global playback_start_monotonic
     for player in players:
-        player.play()
+        try:
+            player.play()
+        except:
+            pass
+    playback_start_monotonic = now()
 
 def toggle_play_pause():
     if any(player.is_playing() for player in players):
@@ -31,7 +57,10 @@ def toggle_play_pause():
 
 def change_speed(rate):
     for player in players:
-        player.set_rate(rate)
+        try:
+            player.set_rate(rate)
+        except:
+            pass
 
 def set_speed(r):
     global current_speed
@@ -47,30 +76,48 @@ def update_speed_button_styles():
             btn.config(relief="raised", font=("TkDefaultFont", 10), foreground="black")
 
 def update_timer():
-    if players:
-        current_time_ms = sum(player.get_time() for player in players) // len(players)
-        current_time_sec = current_time_ms // 1000
-        minutes, seconds = divmod(current_time_sec, 60)
+    global playback_start_monotonic
 
+    if not players:
+        root.after(500, update_timer)
+        return
+
+    playing = any(player.is_playing() for player in players)
+
+    if playback_start_monotonic > 0 and playing:
+        elapsed_since_play = now() - playback_start_monotonic
+    else:
+        elapsed_since_play = 0
+
+    current_time_sec = int(elapsed_since_play + manual_offset)
+    minutes, seconds = divmod(current_time_sec, 60)
+
+    try:
         duration_ms = players[0].get_length()
-        if duration_ms <= 0:
-            root.after(1000, update_timer)
-            return
-        duration_sec = duration_ms // 1000
-        duration_minutes, duration_seconds = divmod(duration_sec, 60)
+    except:
+        duration_ms = -1
 
-        timer_label.config(text=f"{minutes:02}:{seconds:02} / {duration_minutes:02}:{duration_seconds:02}")
+    if duration_ms <= 0:
+        timer_label.config(text="--:-- / --:--")
+        root.after(500, update_timer)
+        return
 
-        if hasattr(root, "footage_start_time"):
-            total_seconds = root.footage_start_time + current_time_sec
-            hr, rem = divmod(total_seconds, 3600)
-            mn, sc = divmod(rem, 60)
-            overlay_label.config(text=f"Footage Time: {hr:02}:{mn:02}:{sc:02}")
+    duration_sec = duration_ms // 1000
+    duration_minutes, duration_seconds = divmod(duration_sec, 60)
 
-    root.after(1000, update_timer)
+    timer_label.config(text=f"{minutes:02}:{seconds:02} / {duration_minutes:02}:{duration_seconds:02}")
+
+    if hasattr(root, "footage_start_time"):
+        total_seconds = root.footage_start_time + current_time_sec
+        hr, rem = divmod(total_seconds, 3600)
+        mn, sc = divmod(rem, 60)
+        overlay_label.config(text=f"Footage Time: {hr:02}:{mn:02}:{sc:02}")
+
+    root.after(500, update_timer)
 
 def skip_all_players(seconds):
-    global skip_in_progress
+    global skip_in_progress, manual_offset, playback_start_monotonic
+
     if skip_in_progress:
         return
 
@@ -78,15 +125,34 @@ def skip_all_players(seconds):
     set_controls_enabled(False)
 
     pause_all_players()
+
+    manual_offset += seconds
+
     for player in players:
-        current_time = player.get_time()
-        duration = player.get_length()
-        if current_time < 0:
-            current_time = 0
-        new_time = max(0, min(current_time + int(seconds * 1000), duration))
-        player.set_time(new_time)
+        try:
+            current_time = player.get_time()
+            duration = player.get_length()
+            if current_time < 0:
+                current_time = 0
+
+            new_time = max(0, min(current_time + int(seconds * 1000), duration))
+            player.set_time(new_time)
+
+        except Exception as e:
+            print(f"[WARNING] Skip failed on player: {e}")
+
+    playback_start_monotonic = 0
 
     update_timer()
+
+    def enforce_pause():
+        for player in players:
+            try:
+                player.pause()
+            except:
+                pass
+
+    root.after(200, enforce_pause)
 
     def finish_skip():
         global skip_in_progress
@@ -100,7 +166,7 @@ def set_controls_enabled(enabled):
     for widget in control_widgets:
         try:
             widget.config(state=state)
-        except Exception:
+        except:
             pass
 
 def skip_back_configurable():
@@ -114,6 +180,7 @@ def on_closing():
     for player in players:
         try:
             player.stop()
+            player.release()
         except Exception as e:
             print(f"Error stopping player: {e}")
     players.clear()
@@ -124,6 +191,9 @@ def on_closing():
         print(f"Error destroying window: {e}")
 
 def stop_app():
+    global manual_offset, playback_start_monotonic
+    manual_offset = 0
+    playback_start_monotonic = 0
     on_closing()
 
 def create_gui(files, icon_path=None):
@@ -147,6 +217,7 @@ def create_gui(files, icon_path=None):
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.bind("<Return>", lambda e: toggle_play_pause())
     root.bind("<F11>", lambda e: root.attributes("-fullscreen", not root.attributes("-fullscreen")))
+
     root.bind("<Left>", lambda e: skip_back_configurable())
     root.bind("<Right>", lambda e: skip_forward_configurable())
 
@@ -165,7 +236,7 @@ def create_gui(files, icon_path=None):
     for c in range(cols):
         root.grid_columnconfigure(c, weight=1)
 
-    frames = []
+    frames.clear()
     for idx in range(num_videos):
         row, col = divmod(idx, cols)
         frame = tk.Frame(root, bg="black")
@@ -215,7 +286,10 @@ def create_gui(files, icon_path=None):
 
     def update_skip_value(selected):
         global skip_configurable_seconds
-        skip_configurable_seconds = int(selected)
+        try:
+            skip_configurable_seconds = int(selected)
+        except ValueError:
+            pass
 
     skip_options = ["1", "5", "10", "15", "30", "60"]
     skip_dropdown = ttk.Combobox(skip_frame, values=skip_options, width=4, state="readonly")
@@ -233,7 +307,7 @@ def create_gui(files, icon_path=None):
 
     tk.Label(speed_frame, text="Speed:").pack(side="left", padx=5)
 
-    speed_buttons = []
+    speed_buttons.clear()
     for rate in [0.25, 0.5, 1, 2]:
         btn = tk.Button(speed_frame, text=f"{rate}x", command=lambda r=rate: set_speed(r))
         btn.pack(side="left", padx=2)
@@ -252,10 +326,7 @@ def create_gui(files, icon_path=None):
     overlay_label.grid(row=5, column=3, padx=5, pady=5, sticky="e")
 
     filename = os.path.basename(files[0])
-    display_name = filename
-    if filename.startswith("CAM"):
-        display_name = filename[5:]
-
+    display_name = filename[5:] if filename.startswith("CAM") else filename
     window_base_title = f"Video Player — {display_name} loaded"
     root.title(f"{window_base_title} — PAUSED")
 
@@ -271,19 +342,35 @@ def create_gui(files, icon_path=None):
                 root.footage_start_time = h * 3600 + m * 60 + s
                 print(f"[DEBUG] Parsed footage start time: {h:02}:{m:02}:{s:02}")
             except Exception as e:
-                print(f"[WARNING] Failed to parse footage start time: {e}")
-        else:
-            print(f"[DEBUG] Invalid time part in filename: {time_str}")
-    else:
-        print(f"[DEBUG] Filename does not follow expected pattern: {filename}")
+                print(f"[WARNING] Failed to parse footage time: {e}")
 
     set_controls_enabled(False)
     root.withdraw()
-    root.after(100, lambda: initialize_players(files, icon_path))
+    root.after(100, lambda: initialize_players(files))
     update_timer()
+
+def wait_for_playback_ready(player, tries_left=15):
+    try:
+        state = player.get_state()
+    except:
+        state = vlc.State.Error
+
+    if state == vlc.State.Playing or tries_left <= 0:
+        try:
+            player.pause()
+        except:
+            pass
+        root.update()
+    else:
+        root.after(100, lambda: wait_for_playback_ready(player, tries_left - 1))
 
 def initialize_players(files, icon_path=None):
     global players
+    for player in players:
+        try:
+            player.release()
+        except:
+            pass
     players.clear()
 
     loading_popup = tk.Toplevel(root)
@@ -301,26 +388,19 @@ def initialize_players(files, icon_path=None):
     ) for _ in files]
 
     for instance, file, frame in zip(instances, files, frames):
-        print(f"Initializing player for {file}")
-        player = instance.media_player_new()
-        media = instance.media_new(file)
-        player.set_media(media)
-        player.set_hwnd(frame.winfo_id())
-        players.append(player)
-
-        player.play()
-        root.update()
-
-        for _ in range(15):
-            state = player.get_state()
-            if state == vlc.State.Playing:
-                time.sleep(0.15)
-                break
-            time.sleep(0.1)
-
-        player.pause()
-        root.update()
-        print(f"  --> Initial frame rendered and paused for {file}")
+        try:
+            print(f"Initializing player for {file}")
+            player = instance.media_player_new()
+            media = instance.media_new(file)
+            player.set_media(media)
+            player.set_hwnd(frame.winfo_id())
+            players.append(player)
+            player.play()
+            root.update()
+            wait_for_playback_ready(player)
+            print(f"  --> {file} ready")
+        except Exception as e:
+            print(f"[ERROR] Failed to init player for {file}: {e}")
 
     loading_popup.destroy()
     root.deiconify()
