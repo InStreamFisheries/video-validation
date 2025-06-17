@@ -31,7 +31,7 @@ def log(msg):
 def pause_all_players():
     global playback_start_monotonic, manual_offset
     if playback_start_monotonic > 0:
-        offset = now() - playback_start_monotonic
+        offset = (now() - playback_start_monotonic) * current_speed
         manual_offset += offset
         log(f"Paused — added {offset:.2f}s to manual_offset (now {manual_offset:.2f})")
     playback_start_monotonic = 0
@@ -113,11 +113,12 @@ def update_timer():
     playing = any(player.is_playing() for player in players)
 
     if playback_start_monotonic > 0 and playing:
-        elapsed_since_play = now() - playback_start_monotonic
+        elapsed_since_play = (now() - playback_start_monotonic) * current_speed
     else:
         elapsed_since_play = 0
 
     current_time_sec = int(elapsed_since_play + manual_offset)
+
     log(f"update_timer: {current_time_sec}s (manual_offset={manual_offset:.2f}, playback_start_monotonic={playback_start_monotonic:.2f})")
     minutes, seconds = divmod(current_time_sec, 60)
 
