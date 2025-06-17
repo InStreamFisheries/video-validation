@@ -420,7 +420,11 @@ def wait_for_playback_ready(player, tries_left=15):
         root.after(100, lambda: wait_for_playback_ready(player, tries_left - 1))
 
 def initialize_players(files, icon_path=None):
-    global players
+    global players, manual_offset, playback_start_monotonic, current_speed
+    manual_offset = 0
+    playback_start_monotonic = 0
+    current_speed = 1.0
+    
     for player in players:
         try:
             player.release()
