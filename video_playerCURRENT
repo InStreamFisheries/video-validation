@@ -4,7 +4,6 @@ import tkinter as tk
 from tkinter import ttk
 import time
 from time import monotonic as now
-import sys
 
 players = []
 frames = []
@@ -20,6 +19,8 @@ manual_offset = 0
 
 WATCHDOG_ENABLED = True
 WATCHDOG_INTERVAL_MS = 200
+
+
 
 DEBUG_LOGGING = True
 
@@ -159,22 +160,16 @@ def skip_all_players(seconds):
     manual_offset += seconds
     log(f"Manual offset updated to: {manual_offset:.2f}s")
 
-    target_time_ms = max(0, int(manual_offset * 1000))
     for idx, player in enumerate(players):
         try:
+            current_time = player.get_time()
             duration = player.get_length()
-            seek_time = min(target_time_ms, duration)
-            log(f"Player {idx}: seeking to {seek_time} (duration {duration})")
+            if current_time < 0:
+                current_time = 0
 
-            for attempt in range(2):
-                player.set_time(seek_time)
-                actual = player.get_time()
-                if actual < 0:
-                    actual = 0
-                if abs(actual - seek_time) <= 250:
-                    break
-                log(f"Player {idx}: seek diff {abs(actual - seek_time)}ms, retrying")
-                time.sleep(0.1)
+            new_time = max(0, min(current_time + int(seconds * 1000), duration))
+            log(f"Player {idx}: current_time={current_time}, seeking to {new_time}")
+            player.set_time(new_time)
         except Exception as e:
             log(f"[WARNING] Player {idx} skip failed: {e}")
 
@@ -447,20 +442,7 @@ def initialize_players(files, icon_path=None):
             player = instance.media_player_new()
             media = instance.media_new(file)
             player.set_media(media)
-            
-            window_id = frame.winfo_id()
-            try:
-                if os.name == "nt" or sys.platform.startswith("win"):
-                    player.set_hwnd(window_id)
-                elif sys.platform.startswith("linux"):
-                    player.set_xwindow(window_id)
-                elif sys.platform == "darwin":
-                    player.set_nsobject(window_id)
-                else:
-                    log(f"Unsupported platform: {sys.platform}")
-            except Exception as e:
-                log(f"Failed to set window handle on {sys.platform}: {e}")
-
+            player.set_hwnd(frame.winfo_id())
             players.append(player)
             player.play()
             root.update()
