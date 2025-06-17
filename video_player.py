@@ -17,6 +17,7 @@ skip_in_progress = False
 
 playback_start_monotonic = 0
 manual_offset = 0
+goto_button = None
 
 WATCHDOG_ENABLED = True
 WATCHDOG_INTERVAL_MS = 200
@@ -150,7 +151,7 @@ def watchdog_enforce_paused():
     root.after(WATCHDOG_INTERVAL_MS, watchdog_enforce_paused)
 
 def update_timer():
-    global playback_start_monotonic
+    global playback_start_monotonic, manual_offset
 
     if not players:
         root.after(500, update_timer)
@@ -177,6 +178,18 @@ def update_timer():
         timer_label.config(text="--:-- / --:--")
         root.after(500, update_timer)
         return
+
+    all_ended = all(player.get_state() == vlc.State.Ended for player in players)
+
+    if all_ended:
+        if playback_start_monotonic > 0:
+            offset = (now() - playback_start_monotonic) * current_speed
+            manual_offset += offset
+            log(f"[ENDED] Playback reached end — added {offset:.2f}s to manual_offset (now {manual_offset:.2f})")
+            playback_start_monotonic = 0
+
+        root.title(f"{window_base_title} — ENDED")
+        set_controls_enabled(False)
 
     duration_sec = duration_ms // 1000
     duration_minutes, duration_seconds = divmod(duration_sec, 60)
@@ -259,6 +272,75 @@ def skip_all_players(seconds):
 
     root.after(1600, finish_skip)
 
+def skip_to_time(target_seconds):
+    global skip_in_progress, manual_offset, playback_start_monotonic
+
+    if skip_in_progress:
+        log("Skip-to-time ignored — skip already in progress")
+        return
+
+    skip_in_progress = True
+    set_controls_enabled(False)
+
+    log(f"Skip-to-time requested: {target_seconds:.2f} seconds")
+    pause_all_players()
+
+    manual_offset = target_seconds
+    target_time_ms = max(0, int(manual_offset * 1000))
+    log(f"Manual offset set to: {manual_offset:.2f}s")
+
+    for idx, player in enumerate(players):
+        try:
+            duration = player.get_length()
+            seek_time = min(target_time_ms, duration)
+            log(f"Player {idx}: seeking to {seek_time}ms (duration {duration})")
+
+            for attempt in range(2):
+                player.set_time(seek_time)
+                actual = player.get_time()
+                if actual < 0:
+                    actual = 0
+                if abs(actual - seek_time) <= 250:
+                    break
+                log(f"Player {idx}: seek diff {abs(actual - seek_time)}ms, retrying")
+                time.sleep(0.1)
+        except Exception as e:
+            log(f"[WARNING] Player {idx} skip-to-time failed: {e}")
+
+    playback_start_monotonic = 0
+    update_timer()
+
+    def enforce_pause(attempts=6):
+        if attempts <= 0:
+            log("[FORCED PAUSE] Max attempts reached — giving up.")
+            return
+
+        still_playing = False
+        for idx, player in enumerate(players):
+            try:
+                state = player.get_state()
+                if state == vlc.State.Playing:
+                    player.set_pause(True)
+                    log(f"[FORCED PAUSE] Player {idx} still playing — re-paused (attempts left: {attempts - 1})")
+                    still_playing = True
+                else:
+                    log(f"Player {idx} state: {state}")
+            except Exception as e:
+                log(f"Error enforcing pause on player {idx}: {e}")
+
+        if still_playing:
+            root.after(200, lambda: enforce_pause(attempts - 1))
+
+    root.after(300, lambda: enforce_pause(attempts=6))
+
+    def finish_skip_to_time():
+        global skip_in_progress
+        skip_in_progress = False
+        goto_button.config(text="Go", state="normal")
+        set_controls_enabled(True)
+        log("Skip-to-time complete — controls re-enabled")
+
+    root.after(1600, finish_skip_to_time)
 
 def set_controls_enabled(enabled):
     state = "normal" if enabled else "disabled"
@@ -303,6 +385,17 @@ def create_gui(files, icon_path=None):
     root = tk.Toplevel()
     root.title("Video Player")
 
+    def maximize_window():
+        try:
+            root.state("zoomed")
+        except:
+            try:
+                root.attributes("-zoomed", True)
+            except:
+                root.geometry(f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}+0+0")
+
+    root.after(0, maximize_window)
+
     try:
         if icon_path:
             if icon_path.endswith(".ico") and os.name == "nt":
@@ -316,14 +409,8 @@ def create_gui(files, icon_path=None):
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.bind("<Return>", lambda e: toggle_play_pause())
     root.bind("<F11>", lambda e: root.attributes("-fullscreen", not root.attributes("-fullscreen")))
-
     root.bind("<Left>", lambda e: skip_back_configurable())
     root.bind("<Right>", lambda e: skip_forward_configurable())
-
-    try:
-        root.attributes("-zoomed", True)
-    except:
-        root.geometry(f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}+0+0")
 
     num_videos = len(files)
     cols = int(num_videos ** 0.5 + 0.5)
@@ -398,8 +485,73 @@ def create_gui(files, icon_path=None):
     control_widgets.append(skip_dropdown)
 
     btn_forward = tk.Button(skip_frame, text=">>", command=skip_forward_configurable)
-    btn_forward.pack(side="left", padx=(5, 2))
+    btn_forward.pack(side="left", padx=(5, 10))
     control_widgets.append(btn_forward)
+
+    tk.Label(skip_frame, text="Go to (MM:SS):").pack(side="left", padx=(0, 2))
+
+    goto_entry = tk.Entry(skip_frame, width=6, foreground="grey")
+    goto_entry.insert(0, "MM:SS")
+    goto_entry.pack(side="left", padx=2)
+
+    def clear_placeholder(event):
+        if goto_entry.get() == "MM:SS":
+            goto_entry.delete(0, tk.END)
+            goto_entry.config(foreground="black")
+
+    def restore_placeholder(event):
+        if not goto_entry.get():
+            goto_entry.insert(0, "MM:SS")
+            goto_entry.config(foreground="grey")
+
+    goto_entry.bind("<FocusIn>", clear_placeholder)
+    goto_entry.bind("<FocusOut>", restore_placeholder)
+
+
+    def on_goto():
+
+        raw_input = goto_entry.get().strip().replace(":", "")
+        if raw_input.upper() == "MMSS" or raw_input == "":
+            log("Skip-to-time input empty or placeholder — skipping")
+            return
+
+
+        if skip_in_progress:
+            log("Skip-to-time already in progress — Go button disabled")
+            return
+
+        raw_input = goto_entry.get().strip().replace(":", "")
+        try:
+            if not raw_input.isdigit():
+                raise ValueError
+
+            raw_input = raw_input.zfill(4)
+            minutes = int(raw_input[:-2])
+            seconds = int(raw_input[-2:])
+
+            if not (0 <= minutes <= 10 and 0 <= seconds < 60):
+                raise ValueError
+
+            total_seconds = minutes * 60 + seconds
+
+            formatted = f"{minutes:02}:{seconds:02}"
+            goto_entry.delete(0, tk.END)
+            goto_entry.insert(0, formatted)
+
+            goto_button.config(text="Skipping...", state="disabled")
+            set_controls_enabled(False)
+            skip_to_time(total_seconds)
+
+
+        except ValueError:
+            log("Invalid time format. Enter MMSS or MM:SS (max 10:00)")
+    
+    global goto_button
+    goto_button = tk.Button(skip_frame, text="Go", command=on_goto)
+    goto_button.pack(side="left", padx=(2, 0))
+    control_widgets.append(goto_button)
+
+
 
     speed_frame = tk.Frame(control_frame)
     speed_frame.grid(row=2, column=0, columnspan=4, sticky="w", padx=5, pady=5)
