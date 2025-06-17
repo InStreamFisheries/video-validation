@@ -9,6 +9,9 @@ frames = []
 current_speed = 1
 speed_buttons = []
 window_base_title = ""
+skip_configurable_seconds = 10
+control_widgets = []
+skip_in_progress = False
 
 def pause_all_players():
     for player in players:
@@ -66,6 +69,46 @@ def update_timer():
 
     root.after(1000, update_timer)
 
+def skip_all_players(seconds):
+    global skip_in_progress
+    if skip_in_progress:
+        return
+
+    skip_in_progress = True
+    set_controls_enabled(False)
+
+    pause_all_players()
+    for player in players:
+        current_time = player.get_time()
+        duration = player.get_length()
+        if current_time < 0:
+            current_time = 0
+        new_time = max(0, min(current_time + int(seconds * 1000), duration))
+        player.set_time(new_time)
+
+    update_timer()
+
+    def finish_skip():
+        global skip_in_progress
+        skip_in_progress = False
+        set_controls_enabled(True)
+
+    root.after(300, finish_skip)
+
+def set_controls_enabled(enabled):
+    state = "normal" if enabled else "disabled"
+    for widget in control_widgets:
+        try:
+            widget.config(state=state)
+        except Exception:
+            pass
+
+def skip_back_configurable():
+    skip_all_players(-skip_configurable_seconds)
+
+def skip_forward_configurable():
+    skip_all_players(skip_configurable_seconds)
+
 def on_closing():
     print("on_closing called")
     for player in players:
@@ -74,7 +117,6 @@ def on_closing():
         except Exception as e:
             print(f"Error stopping player: {e}")
     players.clear()
-
     try:
         if root.winfo_exists():
             root.destroy()
@@ -87,6 +129,7 @@ def stop_app():
 def create_gui(files, icon_path=None):
     global root, frames, timer_label, overlay_label
     global current_speed, speed_buttons, window_base_title
+    global skip_configurable_seconds, control_widgets
 
     root = tk.Toplevel()
     root.title("Video Player")
@@ -104,11 +147,13 @@ def create_gui(files, icon_path=None):
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.bind("<Return>", lambda e: toggle_play_pause())
     root.bind("<F11>", lambda e: root.attributes("-fullscreen", not root.attributes("-fullscreen")))
+    root.bind("<Left>", lambda e: skip_back_configurable())
+    root.bind("<Right>", lambda e: skip_forward_configurable())
 
     try:
-        root.state('zoomed')
+        root.attributes("-zoomed", True)
     except:
-        pass
+        root.geometry(f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}+0+0")
 
     num_videos = len(files)
     cols = int(num_videos ** 0.5 + 0.5)
@@ -116,9 +161,7 @@ def create_gui(files, icon_path=None):
 
     for r in range(rows):
         root.grid_rowconfigure(r, weight=10)
-
     root.grid_rowconfigure(rows, weight=1)
-
     for c in range(cols):
         root.grid_columnconfigure(c, weight=1)
 
@@ -130,7 +173,6 @@ def create_gui(files, icon_path=None):
         frame.grid_propagate(False)
         frames.append(frame)
 
-    # add bottom-right overlay boxes in the root window
     overlay_frames = []
     for idx, frame in enumerate(frames):
         overlay = tk.Frame(root, bg="black")
@@ -154,13 +196,40 @@ def create_gui(files, icon_path=None):
     control_frame = tk.Frame(root)
     control_frame.grid(row=rows, column=0, columnspan=cols, sticky="nsew")
     control_frame.grid_propagate(False)
-    control_frame.configure(height=80)
+    control_frame.configure(height=100)
 
-    tk.Button(control_frame, text="Play/Pause", command=toggle_play_pause).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-    tk.Button(control_frame, text="Stop", command=stop_app).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+    btn_playpause = tk.Button(control_frame, text="Play/Pause", command=toggle_play_pause)
+    btn_playpause.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    control_widgets.append(btn_playpause)
+
+    btn_stop = tk.Button(control_frame, text="Stop", command=stop_app)
+    btn_stop.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+    control_widgets.append(btn_stop)
+
+    skip_frame = tk.Frame(control_frame)
+    skip_frame.grid(row=1, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+
+    btn_back = tk.Button(skip_frame, text="<<", command=skip_back_configurable)
+    btn_back.pack(side="left", padx=(2, 5))
+    control_widgets.append(btn_back)
+
+    def update_skip_value(selected):
+        global skip_configurable_seconds
+        skip_configurable_seconds = int(selected)
+
+    skip_options = ["1", "5", "10", "15", "30", "60"]
+    skip_dropdown = ttk.Combobox(skip_frame, values=skip_options, width=4, state="readonly")
+    skip_dropdown.set(str(skip_configurable_seconds))
+    skip_dropdown.pack(side="left", padx=2)
+    skip_dropdown.bind("<<ComboboxSelected>>", lambda e: update_skip_value(skip_dropdown.get()))
+    control_widgets.append(skip_dropdown)
+
+    btn_forward = tk.Button(skip_frame, text=">>", command=skip_forward_configurable)
+    btn_forward.pack(side="left", padx=(5, 2))
+    control_widgets.append(btn_forward)
 
     speed_frame = tk.Frame(control_frame)
-    speed_frame.grid(row=1, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+    speed_frame.grid(row=2, column=0, columnspan=4, sticky="w", padx=5, pady=5)
 
     tk.Label(speed_frame, text="Speed:").pack(side="left", padx=5)
 
@@ -169,6 +238,7 @@ def create_gui(files, icon_path=None):
         btn = tk.Button(speed_frame, text=f"{rate}x", command=lambda r=rate: set_speed(r))
         btn.pack(side="left", padx=2)
         speed_buttons.append((rate, btn))
+        control_widgets.append(btn)
 
     update_speed_button_styles()
 
@@ -207,102 +277,55 @@ def create_gui(files, icon_path=None):
     else:
         print(f"[DEBUG] Filename does not follow expected pattern: {filename}")
 
+    set_controls_enabled(False)
+    root.withdraw()
     root.after(100, lambda: initialize_players(files, icon_path))
     update_timer()
 
 def initialize_players(files, icon_path=None):
-    print("Initializing players for files:")
-    for f in files:
-        print(f"  --> {f}")
+    global players
+    players.clear()
 
     loading_popup = tk.Toplevel(root)
     loading_popup.title("Loading Videos...")
-
-    try:
-        if icon_path:
-            if icon_path.endswith(".ico") and os.name == "nt":
-                loading_popup.iconbitmap(icon_path)
-            else:
-                img = tk.PhotoImage(file=icon_path)
-                loading_popup.iconphoto(True, img)
-    except Exception as e:
-        print(f"Failed to set loading popup icon: {e}")
-
     loading_popup.geometry("300x100")
-    loading_popup.transient(root)
-    loading_popup.grab_set()
-    loading_popup.resizable(False, False)
-
     tk.Label(loading_popup, text="Loading videos...\nPlease wait.").pack(expand=True)
     loading_popup.update()
 
-    loading_popup.update_idletasks()
-    w = loading_popup.winfo_width()
-    h = loading_popup.winfo_height()
-    x = (root.winfo_screenwidth() // 2) - (w // 2)
-    y = (root.winfo_screenheight() // 2) - (h // 2)
-    loading_popup.geometry(f"+{x}+{y}")
-
-    options = [
+    instances = [vlc.Instance(
         "--file-caching=1000",
         "--network-caching=1000",
         "--avcodec-hw=none",
         "--no-video-title-show",
         "--quiet"
-    ]
-    instances = [vlc.Instance(*options) for _ in files]
+    ) for _ in files]
+
     for instance, file, frame in zip(instances, files, frames):
-        print(f"\nCreating player for: {file}")
+        print(f"Initializing player for {file}")
         player = instance.media_player_new()
         media = instance.media_new(file)
         player.set_media(media)
-        print(f"  --> Media set for {file}")
-        hwnd = frame.winfo_id()
-        print(f"  --> hwnd for frame: {hwnd}")
-        player.set_hwnd(hwnd)
+        player.set_hwnd(frame.winfo_id())
         players.append(player)
+
         player.play()
         root.update()
 
-        for i in range(10):
+        for _ in range(15):
             state = player.get_state()
-            print(f"    Pre-buffer check {i}: player state = {state}")
             if state == vlc.State.Playing:
-                print(f"    Detected State.Playing, waiting 0.15 sec to let frame render...")
                 time.sleep(0.15)
-                break
-            if state not in (vlc.State.Opening, vlc.State.NothingSpecial):
                 break
             time.sleep(0.1)
 
         player.pause()
-        final_state = player.get_state()
-        print(f"  --> Player paused for {file}, final state: {final_state}")
+        root.update()
+        print(f"  --> Initial frame rendered and paused for {file}")
 
-        if final_state in (vlc.State.Error, vlc.State.Opening):
-            print(f"  --> Player failed to load ({final_state}), retrying once...")
-            player.stop()
-            player.set_media(media)
-            player.set_hwnd(hwnd)
-            player.play()
-            root.update()
-            for i in range(10):
-                state = player.get_state()
-                print(f"    Retry pre-buffer check {i}: player state = {state}")
-                if state == vlc.State.Playing:
-                    print(f"    Detected State.Playing on retry, waiting 0.15 sec to let frame render...")
-                    time.sleep(0.15)
-                    break
-                if state not in (vlc.State.Opening, vlc.State.NothingSpecial):
-                    break
-                time.sleep(0.1)
-            player.pause()
-            final_state = player.get_state()
-            print(f"  --> Retry complete, final state: {final_state}")
-
-    loading_popup.grab_release()
     loading_popup.destroy()
+    root.deiconify()
     root.focus_force()
+    set_controls_enabled(True)
 
 def play_videos(vlc_path, files, icon_path=None):
     create_gui(files, icon_path)

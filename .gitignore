@@ -14,6 +14,7 @@ viewed_files.json
 # Ignore spec files
 /specs/
 config.json
+video_playerOLD.py
 
 
 # Byte-compiled / optimized / DLL files
