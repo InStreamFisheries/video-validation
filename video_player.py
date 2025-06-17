@@ -20,8 +20,6 @@ manual_offset = 0
 WATCHDOG_ENABLED = True
 WATCHDOG_INTERVAL_MS = 200
 
-
-
 DEBUG_LOGGING = True
 
 def log(msg):
@@ -442,7 +440,20 @@ def initialize_players(files, icon_path=None):
             player = instance.media_player_new()
             media = instance.media_new(file)
             player.set_media(media)
-            player.set_hwnd(frame.winfo_id())
+            
+            window_id = frame.winfo_id()
+            try:
+                if os.name == "nt" or sys.platform.startswith("win"):
+                    player.set_hwnd(window_id)
+                elif sys.platform.startswith("linux"):
+                    player.set_xwindow(window_id)
+                elif sys.platform == "darwin":
+                    player.set_nsobject(window_id)
+                else:
+                    log(f"Unsupported platform: {sys.platform}")
+            except Exception as e:
+                log(f"Failed to set window handle on {sys.platform}: {e}")
+
             players.append(player)
             player.play()
             root.update()
