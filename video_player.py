@@ -194,7 +194,19 @@ def update_timer():
     duration_sec = duration_ms // 1000
     duration_minutes, duration_seconds = divmod(duration_sec, 60)
 
-    timer_label.config(text=f"{minutes:02}:{seconds:02} / {duration_minutes:02}:{duration_seconds:02}")
+    line1 = f"{minutes:02}:{seconds:02} / {duration_minutes:02}:{duration_seconds:02}"
+
+    footage_current_time = root.footage_start_time + current_time_sec
+    footage_end_time = root.footage_start_time + duration_sec
+
+    def format_time(sec):
+        h, rem = divmod(sec, 3600)
+        m, s = divmod(rem, 60)
+        return f"{h:02}:{m:02}:{s:02}"
+
+    line2 = f"{format_time(footage_current_time)} / {format_time(footage_end_time)}"
+
+    timer_label.config(text=f"{line1}\n{line2}")
 
     if hasattr(root, "footage_start_time"):
         total_seconds = root.footage_start_time + current_time_sec
@@ -570,7 +582,7 @@ def create_gui(files, icon_path=None):
     control_frame.grid_columnconfigure(1, weight=1)
     control_frame.grid_columnconfigure(2, weight=1)
 
-    timer_label = ttk.Label(control_frame, text="00:00 / 00:00")
+    timer_label = ttk.Label(control_frame, text="00:00 / 00:00\n--:--:-- / --:--:--", justify="left")
     timer_label.grid(row=5, column=0, padx=5, pady=5, sticky="w")
 
     overlay_label = ttk.Label(control_frame, text="Footage Time: --:--:--", font=("TkDefaultFont", 12, "bold"))
