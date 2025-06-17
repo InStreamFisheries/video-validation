@@ -17,6 +17,10 @@ skip_in_progress = False
 playback_start_monotonic = 0
 manual_offset = 0
 
+WATCHDOG_ENABLED = True
+WATCHDOG_INTERVAL_MS = 200
+
+
 
 DEBUG_LOGGING = True
 
@@ -28,30 +32,39 @@ def log(msg):
 def pause_all_players():
     global playback_start_monotonic, manual_offset
     if playback_start_monotonic > 0:
-        manual_offset += now() - playback_start_monotonic
+        offset = now() - playback_start_monotonic
+        manual_offset += offset
+        log(f"Paused — added {offset:.2f}s to manual_offset (now {manual_offset:.2f})")
     playback_start_monotonic = 0
 
-    for player in players:
+    for idx, player in enumerate(players):
         try:
             player.pause()
-        except:
-            pass
+            state = player.get_state()
+            log(f"Player {idx} paused — state: {state}")
+        except Exception as e:
+            log(f"Player {idx} pause failed: {e}")
 
 
 def play_all_players():
     global playback_start_monotonic
-    for player in players:
+    for idx, player in enumerate(players):
         try:
             player.play()
-        except:
-            pass
+            log(f"Player {idx} play called")
+            log(f"Player {idx} state after initial play: {player.get_state()}")
+        except Exception as e:
+            log(f"Player {idx} play failed: {e}")
     playback_start_monotonic = now()
+    log("Playback started — timer resumed")
 
 def toggle_play_pause():
     if any(player.is_playing() for player in players):
+        log("Toggle: pausing")
         pause_all_players()
         root.title(f"{window_base_title} — PAUSED")
     else:
+        log("Toggle: playing")
         play_all_players()
         root.title(f"{window_base_title} — PLAYING")
 
@@ -75,6 +88,22 @@ def update_speed_button_styles():
         else:
             btn.config(relief="raised", font=("TkDefaultFont", 10), foreground="black")
 
+def watchdog_enforce_paused():
+    if not WATCHDOG_ENABLED or not players:
+        root.after(WATCHDOG_INTERVAL_MS, watchdog_enforce_paused)
+        return
+
+    if playback_start_monotonic == 0:
+        for idx, player in enumerate(players):
+            try:
+                if player.is_playing():
+                    log(f"[WATCHDOG] Player {idx} unexpectedly playing — forcing pause")
+                    player.set_pause(True)
+            except Exception as e:
+                log(f"[WATCHDOG] Error checking player {idx}: {e}")
+
+    root.after(WATCHDOG_INTERVAL_MS, watchdog_enforce_paused)
+
 def update_timer():
     global playback_start_monotonic
 
@@ -90,6 +119,7 @@ def update_timer():
         elapsed_since_play = 0
 
     current_time_sec = int(elapsed_since_play + manual_offset)
+    log(f"update_timer: {current_time_sec}s (manual_offset={manual_offset:.2f}, playback_start_monotonic={playback_start_monotonic:.2f})")
     minutes, seconds = divmod(current_time_sec, 60)
 
     try:
@@ -119,16 +149,18 @@ def skip_all_players(seconds):
     global skip_in_progress, manual_offset, playback_start_monotonic
 
     if skip_in_progress:
+        log("Skip ignored — already in progress")
         return
 
     skip_in_progress = True
     set_controls_enabled(False)
 
+    log(f"Skip requested: {seconds:+} seconds")
     pause_all_players()
-
     manual_offset += seconds
+    log(f"Manual offset updated to: {manual_offset:.2f}s")
 
-    for player in players:
+    for idx, player in enumerate(players):
         try:
             current_time = player.get_time()
             duration = player.get_length()
@@ -136,30 +168,45 @@ def skip_all_players(seconds):
                 current_time = 0
 
             new_time = max(0, min(current_time + int(seconds * 1000), duration))
+            log(f"Player {idx}: current_time={current_time}, seeking to {new_time}")
             player.set_time(new_time)
-
         except Exception as e:
-            print(f"[WARNING] Skip failed on player: {e}")
+            log(f"[WARNING] Player {idx} skip failed: {e}")
 
     playback_start_monotonic = 0
-
     update_timer()
 
-    def enforce_pause():
-        for player in players:
-            try:
-                player.pause()
-            except:
-                pass
+    def enforce_pause(attempts=6):
+        if attempts <= 0:
+            log("[FORCED PAUSE] Max attempts reached — giving up.")
+            return
 
-    root.after(200, enforce_pause)
+        still_playing = False
+        for idx, player in enumerate(players):
+            try:
+                state = player.get_state()
+                if state == vlc.State.Playing:
+                    player.set_pause(True)
+                    log(f"[FORCED PAUSE] Player {idx} still playing — re-paused (attempts left: {attempts - 1})")
+                    still_playing = True
+                else:
+                    log(f"Player {idx} state: {state}")
+            except Exception as e:
+                log(f"Error enforcing pause on player {idx}: {e}")
+
+        if still_playing:
+            root.after(200, lambda: enforce_pause(attempts - 1))
+
+    root.after(300, lambda: enforce_pause(attempts=6))
 
     def finish_skip():
         global skip_in_progress
         skip_in_progress = False
         set_controls_enabled(True)
+        log("Skip complete — controls re-enabled")
 
-    root.after(300, finish_skip)
+    root.after(1600, finish_skip)
+
 
 def set_controls_enabled(enabled):
     state = "normal" if enabled else "disabled"
@@ -348,6 +395,8 @@ def create_gui(files, icon_path=None):
     root.withdraw()
     root.after(100, lambda: initialize_players(files))
     update_timer()
+    watchdog_enforce_paused()
+
 
 def wait_for_playback_ready(player, tries_left=15):
     try:
