@@ -77,15 +77,54 @@ def change_speed(rate):
 def set_speed(r):
     global current_speed, manual_offset, playback_start_monotonic
 
+    was_playing = any(player.is_playing() for player in players)
+
+    if was_playing:
+        log("Changing speed — pausing for clean transition")
+        pause_all_players()
+
     if playback_start_monotonic > 0:
         elapsed = (now() - playback_start_monotonic) * current_speed
         manual_offset += elapsed
-        playback_start_monotonic = now()
         log(f"Speed change: added {elapsed:.2f}s to manual_offset (now {manual_offset:.2f})")
+        playback_start_monotonic = 0
 
     current_speed = r
     change_speed(r)
     update_speed_button_styles()
+
+    root.title(f"{window_base_title} — PAUSED")
+    log(f"Speed changed to {r}x and playback remains paused")
+
+    def wait_for_playback_ready(player, tries_left=15):
+        try:
+            state = player.get_state()
+        except:
+            state = vlc.State.Error
+
+        if state == vlc.State.Playing or tries_left <= 0:
+            try:
+                player.pause()
+            except:
+                pass
+            root.update()
+        else:
+            root.after(100, lambda: wait_for_playback_ready(player, tries_left - 1))
+
+    def warmup_players():
+        log("[WARMUP] Briefly playing all players after speed change")
+        for idx, player in enumerate(players):
+            try:
+                player.play()
+                wait_for_playback_ready(player)
+            except Exception as e:
+                log(f"[WARMUP] Player {idx} failed to warm up: {e}")
+
+        root.after(200, lambda: pause_all_players())
+        root.after(300, lambda: set_controls_enabled(True))
+
+    set_controls_enabled(False)
+    root.after(100, warmup_players)
 
 def update_speed_button_styles():
     for rate, btn in speed_buttons:
