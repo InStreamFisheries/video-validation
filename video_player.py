@@ -75,7 +75,14 @@ def change_speed(rate):
             pass
 
 def set_speed(r):
-    global current_speed
+    global current_speed, manual_offset, playback_start_monotonic
+
+    if playback_start_monotonic > 0:
+        elapsed = (now() - playback_start_monotonic) * current_speed
+        manual_offset += elapsed
+        playback_start_monotonic = now()
+        log(f"Speed change: added {elapsed:.2f}s to manual_offset (now {manual_offset:.2f})")
+
     current_speed = r
     change_speed(r)
     update_speed_button_styles()
