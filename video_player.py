@@ -206,7 +206,7 @@ def update_timer():
 
     line2 = f"{format_time(footage_current_time)} / {format_time(footage_end_time)}"
 
-    timer_label.config(text=f"{line1}\n{line2}")
+    timer_label.config(text=f"{line1}   ({line2})")
 
     if hasattr(root, "footage_start_time"):
         total_seconds = root.footage_start_time + current_time_sec
@@ -582,11 +582,13 @@ def create_gui(files, icon_path=None):
     control_frame.grid_columnconfigure(1, weight=1)
     control_frame.grid_columnconfigure(2, weight=1)
 
-    timer_label = ttk.Label(control_frame, text="00:00 / 00:00\n--:--:-- / --:--:--", justify="left")
-    timer_label.grid(row=5, column=0, padx=5, pady=5, sticky="w")
+    timer_label = ttk.Label(control_frame, text="00:00 / 00:00   --:--:-- / --:--:--", justify="left", anchor="w")
+    timer_label.grid(row=5, column=0, padx=5, pady=5, sticky="w", columnspan=2)
 
     overlay_label = ttk.Label(control_frame, text="Footage Time: --:--:--", font=("TkDefaultFont", 12, "bold"))
     overlay_label.grid(row=5, column=3, padx=5, pady=5, sticky="e")
+
+    control_frame.grid_rowconfigure(5, weight=1)
 
     filename = os.path.basename(files[0])
     display_name = filename[5:] if filename.startswith("CAM") else filename
