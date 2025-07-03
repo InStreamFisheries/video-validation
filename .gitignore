@@ -13,7 +13,7 @@ ffmpeg/
 ffmpeg/bin/ffmpeg.exe
 ffmpeg/bin/ffplay.exe
 ffmpeg/bin/ffprobe.exe
-vlc_bundle/s
+vlc_bundle/
 vlc_bundle/plugins/
 
 
