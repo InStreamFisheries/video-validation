@@ -67,28 +67,6 @@ def save_config():
     except Exception as e:
         logger.error(f"Error saving config: {e}")
 
-def setup_vlc_path():
-    if config["vlc_path"]:
-        return config["vlc_path"]
-
-    default_vlc_path = r"C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
-    if os.path.exists(default_vlc_path):
-        config["vlc_path"] = default_vlc_path
-        return default_vlc_path
-
-    root = Tk()
-    root.withdraw()
-    vlc_path = filedialog.askopenfilename(
-        title="Select VLC Executable (vlc.exe or cvlc)",
-        filetypes=[("VLC Executable", "vlc.exe cvlc")]
-    )
-    if vlc_path and os.path.exists(vlc_path):
-        config["vlc_path"] = vlc_path
-        return vlc_path
-    else:
-        logger.error("VLC path not selected. Exiting.")
-        exit()
-
 def load_camera_files():
     global camera_files
     rec_path = filedialog.askdirectory(title="Select the REC Folder")
@@ -339,7 +317,7 @@ def show_navigation_ui():
             logger.info("Viewed times cleared.")
 
     def play_selected_videos():
-        vlc = setup_vlc_path()
+        vlc_path = None
         y, m, d = year_var.get(), month_var.get(), day_var.get()
         t = getattr(time_var, "raw_time", None)
         if y and m and d and t:
@@ -351,7 +329,7 @@ def show_navigation_ui():
 
                 logger.info(f"Playing video(s) for: {viewed_key}")
 
-                play_videos(vlc, camera_files[y][m][d][t], icon_path)
+                play_videos(vlc_path, camera_files[y][m][d][t], icon_path)
                 update_times()
 
             except KeyError:

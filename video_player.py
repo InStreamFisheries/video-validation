@@ -1,10 +1,32 @@
-import vlc
-import os
+import sys, os, ctypes
+
+def setup_vlc_env():
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(os.path.dirname(__file__))
+
+    plugin_path = os.path.join(base_path, "vlc_bundle", "plugins")
+    libvlc_path = os.path.join(base_path, "vlc_bundle", "libvlc.dll")
+
+    os.environ["VLC_PLUGIN_PATH"] = plugin_path
+
+    try:
+        ctypes.CDLL(libvlc_path)
+        print(f"[VLC] Loaded libvlc manually from {libvlc_path}")
+    except Exception as e:
+        print(f"[VLC] Failed to load libvlc.dll: {e}")
+        raise
+
+    import vlc
+    return vlc, vlc.Instance, vlc.MediaPlayer, vlc.Media, vlc.State
+
+vlc, Instance, MediaPlayer, Media, State = setup_vlc_env()
+
 import tkinter as tk
 from tkinter import ttk
 import time
 from time import monotonic as now
-import sys
 
 players = []
 frames = []
