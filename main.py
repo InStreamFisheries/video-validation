@@ -2,6 +2,16 @@ import os
 import sys
 import logging
 import navigation
+
+def _inject_vlc_bundle():
+    base = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
+    vb = os.path.join(base, "vlc_bundle")
+    if os.path.isdir(vb):
+        os.environ["PATH"] = vb + os.pathsep + os.environ.get("PATH", "")
+        os.environ["VLC_PLUGIN_PATH"] = os.path.join(vb, "plugins")
+
+_inject_vlc_bundle()
+
 import video_player
 
 logging.basicConfig(

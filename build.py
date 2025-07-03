@@ -65,22 +65,13 @@ def build_app(version):
         file_path = os.path.join(os.getcwd(), file)
         if os.path.exists(file_path):
             if file == "version.txt":
-                command.append(f"--add-data={file_path};version.txt")
+                command.append(f"--add-data={file_path}{os.pathsep}version.txt")
             else:
-                command.append(f"--add-data={file_path};.")
+                command.append(f"--add-data={file_path}{os.pathsep}.")
 
     vlc_dir = os.path.abspath("vlc_bundle")
-    if os.path.exists(vlc_dir):
-        dll1 = os.path.join(vlc_dir, "libvlc.dll")
-        dll2 = os.path.join(vlc_dir, "libvlccore.dll")
-        plugins_dir = os.path.join(vlc_dir, "plugins")
-
-        if os.path.exists(dll1):
-            command.append(f"--add-data={dll1};.")
-        if os.path.exists(dll2):
-            command.append(f"--add-data={dll2};.")
-        if os.path.exists(plugins_dir):
-            command.append(f"--add-data={plugins_dir};plugins")
+    if os.path.isdir(vlc_dir):
+        command.append(f"--add-data={vlc_dir}{os.pathsep}vlc_bundle")
 
     if default_icon:
         command.append(f"--icon={default_icon}")
