@@ -68,13 +68,6 @@ def save_config():
         logger.error(f"Error saving config: {e}")
 
 def setup_vlc_path():
-    try:
-        import vlc
-        vlc.Instance()
-        config["vlc_path"] = ""
-        return ""
-    except Exception:
-        pass
     if config["vlc_path"]:
         return config["vlc_path"]
 
